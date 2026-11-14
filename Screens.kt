@@ -1,0 +1,832 @@
+package com.glassplayer.app.ui
+
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.NewReleases
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.Sort
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import com.glassplayer.app.DetailKey
+import com.glassplayer.app.MusicViewModel
+import com.glassplayer.app.data.Song
+import kotlinx.coroutines.launch
+
+// =====================================================================
+//  Root
+// =====================================================================
+
+@Composable
+fun AppRoot(vm: MusicViewModel) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    val audioPerm = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO
+    else Manifest.permission.READ_EXTERNAL_STORAGE
+
+    fun hasAudio() = ContextCompat.checkSelfPermission(ctx, audioPerm) == PackageManager.PERMISSION_GRANTED
+    var granted by remember { mutableStateOf(hasAudio()) }
+
+    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        val now = hasAudio()
+        if (now && !granted) vm.loadSongs()
+        granted = now
+    }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) vm.addFiles(uris)
+    }
+    val pickFiles = { picker.launch(arrayOf("audio/*", "application/ogg")) }
+
+    LaunchedEffect(Unit) {
+        if (granted) vm.ensureLoaded()
+        val need = buildList {
+            if (!granted) add(audioPerm)
+            if (Build.VERSION.SDK_INT >= 33 &&
+                ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        if (need.isNotEmpty()) permLauncher.launch(need.toTypedArray())
+    }
+
+    if (!granted) {
+        Box(Modifier.fillMaxSize()) {
+            GlassBackground()
+            Column(
+                Modifier
+                    .align(Alignment.Center)
+                    .padding(28.dp)
+                    .glass()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Icon(Icons.Rounded.Headphones, null, tint = Color.White, modifier = Modifier.size(48.dp))
+                Spacer(Modifier.height(12.dp))
+                Text("Izinkan akses musik", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Glass Player perlu izin untuk membaca file musik di perangkat Anda.",
+                    color = SubText, textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(16.dp))
+                GlassButton("Izinkan", onClick = { permLauncher.launch(arrayOf(audioPerm)) })
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = {
+                    ctx.startActivity(
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", ctx.packageName, null))
+                    )
+                }) { Text("Buka pengaturan aplikasi", color = Accent) }
+            }
+        }
+        return
+    }
+
+    var tab by rememberSaveable { mutableStateOf(0) }
+    var detail by remember { mutableStateOf<DetailKey?>(null) }
+    var showNow by remember { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var addTarget by remember { mutableStateOf<Song?>(null) }
+    var showNewPlaylist by remember { mutableStateOf(false) }
+    var newPlaylistFor by remember { mutableStateOf<Song?>(null) }
+    var showSleep by remember { mutableStateOf(false) }
+    var showAbout by remember { mutableStateOf(false) }
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+
+    val actions = remember(vm) {
+        SongActions(
+            onPlayNext = vm::playNext,
+            onToggleFav = vm::toggleFavorite,
+            onAddToPlaylist = { addTarget = it },
+        )
+    }
+
+    BackHandler(enabled = detail == null && tab != 0) { tab = 0 }
+    BackHandler(enabled = detail != null) { detail = null }
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        gesturesEnabled = drawerState.isOpen,
+        drawerContent = {
+            ModalDrawerSheet(drawerContainerColor = Color(0xF01C1B15)) {
+                DrawerContent(
+                    songCount = vm.allSongs.size,
+                    lockEnabled = vm.lockScreenEnabled,
+                    onToggleLock = { on ->
+                        vm.setLockScreen(on)
+                        if (on && !Settings.canDrawOverlays(ctx)) {
+                            ctx.startActivity(
+                                Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}"))
+                            )
+                        }
+                    },
+                    onRescan = { vm.loadSongs(); scope.launch { drawerState.close() } },
+                    onPick = { pickFiles(); scope.launch { drawerState.close() } },
+                    onSleep = { showSleep = true; scope.launch { drawerState.close() } },
+                    onAbout = { showAbout = true; scope.launch { drawerState.close() } },
+                )
+            }
+        },
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            GlassBackground()
+
+            Box(Modifier.fillMaxSize().statusBarsPadding()) {
+                val d = detail
+                when {
+                    d != null -> {
+                        val list = vm.listFor(d)
+                        val name = (d as? DetailKey.Playlist)?.name
+                        DetailScreen(
+                            title = detailTitle(d),
+                            songs = list,
+                            vm = vm,
+                            actions = if (name != null)
+                                SongActions(
+                                    actions.onPlayNext, actions.onToggleFav, actions.onAddToPlaylist,
+                                    onRemoveFromPlaylist = { s -> vm.removeFromPlaylist(name, s) },
+                                ) else actions,
+                            onBack = { detail = null },
+                            onDelete = if (name != null) ({ vm.deletePlaylist(name); detail = null }) else null,
+                        )
+                    }
+                    tab == 0 -> LibraryScreen(
+                        vm = vm,
+                        actions = actions,
+                        onOpenDrawer = { scope.launch { drawerState.open() } },
+                        onSearch = { tab = 1 },
+                        onDetail = { detail = it },
+                        onNewPlaylist = { newPlaylistFor = null; showNewPlaylist = true },
+                        onPickFiles = { pickFiles() },
+                    )
+                    tab == 1 -> SearchScreen(vm, actions, query) { query = it }
+                    else -> DetailScreen(
+                        title = "Favorit",
+                        songs = vm.listFor(DetailKey.Favorites),
+                        vm = vm,
+                        actions = actions,
+                        onBack = null,
+                        onDelete = null,
+                    )
+                }
+            }
+
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+            ) {
+                MiniPlayer(vm) { showNow = true }
+                if (vm.currentSong != null) Spacer(Modifier.height(10.dp))
+                BottomBar(selected = tab) { tab = it; detail = null }
+            }
+
+            AnimatedVisibility(
+                visible = showNow,
+                enter = slideInVertically { it },
+                exit = slideOutVertically { it },
+            ) {
+                NowPlayingScreen(vm, onClose = { showNow = false }, onSleep = { showSleep = true })
+            }
+        }
+    }
+
+    // ---- Dialog ----
+    addTarget?.let { song ->
+        AlertDialog(
+            onDismissRequest = { addTarget = null },
+            containerColor = Color(0xFF26241B),
+            titleContentColor = Color.White,
+            textContentColor = Color.White,
+            title = { Text("Tambah ke playlist") },
+            text = {
+                Column {
+                    vm.playlists.keys.forEach { name ->
+                        TextButton(onClick = { vm.addToPlaylist(name, song); addTarget = null }) {
+                            Text(name, color = Color.White)
+                        }
+                    }
+                    TextButton(onClick = { newPlaylistFor = song; showNewPlaylist = true; addTarget = null }) {
+                        Text("+ Playlist baru", color = Accent)
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { addTarget = null }) { Text("Tutup", color = Accent) } },
+        )
+    }
+
+    if (showNewPlaylist) {
+        var name by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showNewPlaylist = false },
+            containerColor = Color(0xFF26241B),
+            titleContentColor = Color.White,
+            title = { Text("Playlist baru") },
+            text = {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    singleLine = true,
+                    label = { Text("Nama playlist") },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (vm.createPlaylist(name)) newPlaylistFor?.let { vm.addToPlaylist(name.trim(), it) }
+                    newPlaylistFor = null
+                    showNewPlaylist = false
+                }) { Text("Buat", color = Accent) }
+            },
+            dismissButton = { TextButton(onClick = { showNewPlaylist = false }) { Text("Batal", color = Color.White) } },
+        )
+    }
+
+    if (showSleep) {
+        AlertDialog(
+            onDismissRequest = { showSleep = false },
+            containerColor = Color(0xFF26241B),
+            titleContentColor = Color.White,
+            title = { Text("Timer tidur") },
+            text = {
+                Column {
+                    listOf(15, 30, 45, 60, 90).forEach { m ->
+                        TextButton(onClick = { vm.setSleepTimer(m); showSleep = false }) {
+                            Text("$m menit", color = Color.White)
+                        }
+                    }
+                    if (vm.sleepEndsAt > 0) {
+                        TextButton(onClick = { vm.setSleepTimer(0); showSleep = false }) {
+                            Text("Matikan timer", color = Accent)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showSleep = false }) { Text("Tutup", color = Accent) } },
+        )
+    }
+
+    if (showAbout) {
+        AlertDialog(
+            onDismissRequest = { showAbout = false },
+            containerColor = Color(0xFF26241B),
+            titleContentColor = Color.White,
+            textContentColor = Color.White,
+            title = { Text("Glass Player") },
+            text = {
+                Text(
+                    "Pemutar musik offline untuk semua format audio (MP3, M4A, FLAC, WAV, OGG, OPUS, dll). " +
+                        "Berjalan di latar belakang dan di layar kunci."
+                )
+            },
+            confirmButton = { TextButton(onClick = { showAbout = false }) { Text("OK", color = Accent) } },
+        )
+    }
+}
+
+private fun detailTitle(k: DetailKey) = when (k) {
+    DetailKey.Recent -> "Terbaru Diputar"
+    DetailKey.Newest -> "Baru Ditambah"
+    DetailKey.All -> "Semua Lagu"
+    DetailKey.Favorites -> "Favorit"
+    is DetailKey.Playlist -> k.name
+    is DetailKey.Album -> k.name
+}
+
+// =====================================================================
+//  Komponen kecil
+// =====================================================================
+
+@Composable
+fun GlassButton(text: String, icon: ImageVector? = null, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .glass(CircleShape, 1.3f)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        if (icon != null) {
+            Icon(icon, null, tint = Color.White, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+        }
+        Text(text, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+    }
+}
+
+@Composable
+private fun HomeTile(title: String, icon: ImageVector, art: Song?, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(width = 160.dp, height = 100.dp)
+            .glass(RoundedCornerShape(24.dp))
+            .clickable(onClick = onClick)
+    ) {
+        if (art != null) {
+            ArtImage(art, Modifier.fillMaxSize(), androidx.compose.ui.graphics.RectangleShape, iconSize = 1.dp)
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.15f), Color.Black.copy(alpha = 0.7f)))
+                )
+            )
+        }
+        Box(
+            Modifier
+                .align(Alignment.TopEnd)
+                .padding(10.dp)
+                .size(30.dp)
+                .glass(CircleShape, 1.4f),
+            contentAlignment = Alignment.Center,
+        ) { Icon(icon, null, tint = Color.White, modifier = Modifier.size(16.dp)) }
+        Text(
+            title,
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            fontSize = 15.sp,
+            modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
+        )
+    }
+}
+
+@Composable
+private fun CollectionCard(title: String, subtitle: String, art: Song?, onClick: () -> Unit) {
+    Column(Modifier.width(128.dp).clickable(onClick = onClick)) {
+        ArtImage(art, Modifier.size(128.dp), RoundedCornerShape(22.dp), seed = title, iconSize = 40.dp)
+        Spacer(Modifier.height(6.dp))
+        Text(title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(subtitle, color = SubText, fontSize = 11.sp, maxLines = 1)
+    }
+}
+
+@Composable
+private fun NewPlaylistCard(onClick: () -> Unit) {
+    Column(Modifier.width(128.dp).clickable(onClick = onClick)) {
+        Box(
+            Modifier.size(128.dp).glass(RoundedCornerShape(22.dp), 1.2f),
+            contentAlignment = Alignment.Center,
+        ) { Icon(Icons.Rounded.Add, null, tint = Color.White, modifier = Modifier.size(40.dp)) }
+        Spacer(Modifier.height(6.dp))
+        Text("Playlist baru", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text(" ", fontSize = 11.sp)
+    }
+}
+
+// =====================================================================
+//  Pustaka (beranda)
+// =====================================================================
+
+@Composable
+fun LibraryScreen(
+    vm: MusicViewModel,
+    actions: SongActions,
+    onOpenDrawer: () -> Unit,
+    onSearch: () -> Unit,
+    onDetail: (DetailKey) -> Unit,
+    onNewPlaylist: () -> Unit,
+    onPickFiles: () -> Unit,
+) {
+    val songs = vm.songs
+    val favSet = remember(vm.favorites) { vm.favorites.toSet() }
+    val albums = remember(vm.allSongs) {
+        vm.allSongs
+            .filter { it.album.isNotBlank() }
+            .groupBy { it.album }
+            .map { it.key to it.value }
+            .sortedByDescending { it.second.size }
+            .take(15)
+    }
+
+    LazyColumn(contentPadding = PaddingValues(top = 8.dp, bottom = 220.dp)) {
+
+        // Bilah atas: menu + kolom cari
+        item {
+            Row(
+                Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                GlassIconButton(Icons.Rounded.Menu, "Menu", onOpenDrawer)
+                Spacer(Modifier.width(10.dp))
+                Row(
+                    Modifier
+                        .weight(1f)
+                        .height(44.dp)
+                        .glass(CircleShape)
+                        .clickable(onClick = onSearch)
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Cari lagu, artis, album…", color = SubText, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Icon(Icons.Rounded.Search, null, tint = Color.White)
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+
+        // Baris kartu kaca teratas
+        item {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                item {
+                    HomeTile("Terbaru", Icons.Rounded.History, vm.songsOf(vm.recents).firstOrNull()) { onDetail(DetailKey.Recent) }
+                }
+                item {
+                    HomeTile("Favorit", Icons.Rounded.Favorite, vm.songsOf(vm.favorites).firstOrNull()) { onDetail(DetailKey.Favorites) }
+                }
+                item {
+                    HomeTile("Baru Ditambah", Icons.Rounded.NewReleases, vm.listFor(DetailKey.Newest).firstOrNull()) { onDetail(DetailKey.Newest) }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+
+        // Panel kaca playlist
+        item {
+            Column(Modifier.padding(horizontal = 16.dp).fillMaxWidth().glass()) {
+                Row(
+                    Modifier.padding(start = 18.dp, end = 12.dp, top = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Playlist", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Row(
+                        Modifier
+                            .clip(CircleShape)
+                            .background(Color.White)
+                            .clickable { vm.shuffleAll(songs) }
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Rounded.Shuffle, null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Acak", color = Color.Black, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    }
+                }
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    item {
+                        CollectionCard("Semua Lagu", "${songs.size} lagu", songs.firstOrNull()) { onDetail(DetailKey.All) }
+                    }
+                    items(vm.playlists.keys.toList()) { name ->
+                        val list = vm.songsOf(vm.playlists[name].orEmpty())
+                        CollectionCard(name, "${list.size} lagu", list.firstOrNull()) { onDetail(DetailKey.Playlist(name)) }
+                    }
+                    item { NewPlaylistCard(onNewPlaylist) }
+                    items(albums) { (name, list) ->
+                        CollectionCard(name, "${list.size} lagu", list.first()) { onDetail(DetailKey.Album(name)) }
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+
+        // Kepala daftar semua lagu
+        item {
+            Row(
+                Modifier
+                    .padding(horizontal = 16.dp)
+                    .fillMaxWidth()
+                    .clip(
+                        if (songs.isEmpty()) RoundedCornerShape(GroupRadius)
+                        else RoundedCornerShape(topStart = GroupRadius, topEnd = GroupRadius)
+                    )
+                    .background(Color.Black.copy(alpha = 0.14f))
+                    .background(Color.White.copy(alpha = 0.11f))
+                    .padding(start = 18.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Semua Lagu", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("  ${songs.size}", color = SubText, fontSize = 14.sp)
+                Spacer(Modifier.weight(1f))
+                if (vm.loading) {
+                    CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Row(
+                    Modifier.clip(CircleShape).clickable(onClick = vm::cycleSort).padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.Sort, "Urutkan", tint = Color.White, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(vm.sortLabel, color = Color.White, fontSize = 12.sp)
+                }
+            }
+        }
+
+        if (songs.isEmpty() && !vm.loading) {
+            item {
+                Column(
+                    Modifier.padding(horizontal = 16.dp, vertical = 24.dp).fillMaxWidth().glass().padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text("Belum ada lagu ditemukan", color = Color.White, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Salin file musik ke HP, atau pilih file secara manual.",
+                        color = SubText, textAlign = TextAlign.Center, fontSize = 13.sp,
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    GlassButton("Tambah file musik", Icons.Rounded.FolderOpen, onPickFiles)
+                }
+            }
+        }
+
+        itemsIndexed(songs, key = { _, s -> s.uri }) { i, s ->
+            SongRow(
+                song = s,
+                current = vm.currentId == s.uri,
+                favorite = s.uri in favSet,
+                shape = rowShape(i, songs.size, headerAbove = true),
+                actions = actions,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            ) { vm.playList(songs, i) }
+        }
+    }
+}
+
+// =====================================================================
+//  Detail (daftar lagu: terbaru / favorit / playlist / album)
+// =====================================================================
+
+@Composable
+fun DetailScreen(
+    title: String,
+    songs: List<Song>,
+    vm: MusicViewModel,
+    actions: SongActions,
+    onBack: (() -> Unit)?,
+    onDelete: (() -> Unit)?,
+) {
+    val favSet = remember(vm.favorites) { vm.favorites.toSet() }
+    LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 220.dp)) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onBack != null) {
+                    GlassIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Kembali", onBack)
+                    Spacer(Modifier.width(12.dp))
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${songs.size} lagu", color = SubText, fontSize = 13.sp)
+                }
+                if (onDelete != null) {
+                    GlassIconButton(Icons.Rounded.Delete, "Hapus playlist", onDelete)
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                GlassButton("Putar", Icons.Rounded.PlayArrow, { vm.playList(songs, 0, false) }, Modifier.weight(1f))
+                GlassButton("Acak", Icons.Rounded.Shuffle, { vm.shuffleAll(songs) }, Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(14.dp))
+        }
+        if (songs.isEmpty()) {
+            item {
+                Text(
+                    "Belum ada lagu di sini.",
+                    color = SubText,
+                    modifier = Modifier.fillMaxWidth().glass().padding(24.dp),
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+        itemsIndexed(songs, key = { _, s -> s.uri }) { i, s ->
+            SongRow(
+                song = s,
+                current = vm.currentId == s.uri,
+                favorite = s.uri in favSet,
+                shape = rowShape(i, songs.size, headerAbove = false),
+                actions = actions,
+            ) { vm.playList(songs, i) }
+        }
+    }
+}
+
+// =====================================================================
+//  Cari
+// =====================================================================
+
+@Composable
+fun SearchScreen(vm: MusicViewModel, actions: SongActions, query: String, onQuery: (String) -> Unit) {
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    val favSet = remember(vm.favorites) { vm.favorites.toSet() }
+    val q = query.trim()
+    val results = remember(q, vm.songs) {
+        if (q.isEmpty()) emptyList()
+        else vm.songs.filter {
+            it.title.contains(q, true) || it.artist.contains(q, true) || it.album.contains(q, true)
+        }.take(300)
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier
+                .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp)
+                .fillMaxWidth()
+                .height(48.dp)
+                .glass(CircleShape)
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.Search, null, tint = Color.White)
+            Spacer(Modifier.width(10.dp))
+            BasicTextField(
+                value = query,
+                onValueChange = onQuery,
+                singleLine = true,
+                textStyle = TextStyle(color = Color.White, fontSize = 16.sp),
+                cursorBrush = SolidColor(Color.White),
+                modifier = Modifier.weight(1f).focusRequester(focus),
+                decorationBox = { inner ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (query.isEmpty()) Text("Cari lagu, artis, album…", color = SubText, fontSize = 16.sp)
+                        inner()
+                    }
+                },
+            )
+            if (query.isNotEmpty()) {
+                Icon(
+                    Icons.Rounded.Close, "Hapus",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp).clickable { onQuery("") },
+                )
+            }
+        }
+
+        LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 220.dp)) {
+            if (q.isNotEmpty() && results.isEmpty()) {
+                item {
+                    Text(
+                        "Tidak ada hasil untuk \"$q\"",
+                        color = SubText,
+                        modifier = Modifier.fillMaxWidth().glass().padding(24.dp),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+            itemsIndexed(results, key = { _, s -> s.uri }) { i, s ->
+                SongRow(
+                    song = s,
+                    current = vm.currentId == s.uri,
+                    favorite = s.uri in favSet,
+                    shape = rowShape(i, results.size, headerAbove = false),
+                    actions = actions,
+                ) { vm.playList(results, i) }
+            }
+        }
+    }
+}
+
+// =====================================================================
+//  Menu samping (drawer)
+// =====================================================================
+
+@Composable
+private fun DrawerContent(
+    songCount: Int,
+    lockEnabled: Boolean,
+    onToggleLock: (Boolean) -> Unit,
+    onRescan: () -> Unit,
+    onPick: () -> Unit,
+    onSleep: () -> Unit,
+    onAbout: () -> Unit,
+) {
+    Column(Modifier.padding(20.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(52.dp).clip(CircleShape).background(Color(0xFFB9AC74)),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Rounded.Headphones, null, tint = Color.White, modifier = Modifier.size(28.dp)) }
+            Spacer(Modifier.width(14.dp))
+            Text("Glass Player", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(18.dp))
+        Column(Modifier.fillMaxWidth().glass().padding(16.dp)) {
+            Text("Pustaka", color = SubText, fontSize = 12.sp)
+            Text("$songCount lagu", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(14.dp))
+        DrawerItem(Icons.Rounded.Refresh, "Pindai ulang musik", onRescan)
+        DrawerItem(Icons.Rounded.FolderOpen, "Tambah file musik manual", onPick)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .clickable { onToggleLock(!lockEnabled) }
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.Lock, null, tint = Color.White)
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Layar kunci kaca", color = Color.White, fontSize = 15.sp)
+                Text("Tampil saat layar mati & musik jalan", color = SubText, fontSize = 11.sp)
+            }
+            Switch(checked = lockEnabled, onCheckedChange = onToggleLock)
+        }
+        DrawerItem(Icons.Rounded.Bedtime, "Timer tidur", onSleep)
+        DrawerItem(Icons.Rounded.Info, "Tentang", onAbout)
+    }
+}
+
+@Composable
+private fun DrawerItem(icon: ImageVector, label: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, tint = Color.White)
+        Spacer(Modifier.width(16.dp))
+        Text(label, color = Color.White, fontSize = 15.sp)
+    }
+}

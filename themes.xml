@@ -1,0 +1,20 @@
+<resources>
+    <!-- Latar jendela = gradasi yang sama dengan animasi pembuka, jadi tidak ada layar hitam saat aplikasi dibuka -->
+    <style name="Theme.GlassPlayer" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@drawable/splash_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <!-- Android 12+: splash bawaan sistem berwarna senada + ikon yang sama (diabaikan di Android lama) -->
+        <item name="android:windowSplashScreenBackground">#8C8058</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+    </style>
+
+    <!-- Tema transparan: wallpaper HP tetap terlihat di belakang kartu musik layar kunci -->
+    <style name="Theme.GlassPlayer.Lock" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowShowWallpaper">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>
