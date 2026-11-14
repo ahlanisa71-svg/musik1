@@ -25,9 +25,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.delay
 import android.os.SystemClock
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.composed
 import androidx.compose.animation.core.LinearEasing
