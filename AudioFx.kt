@@ -105,7 +105,7 @@ object AudioFx {
         }
     }
 
-    fun setEnabled(on: Boolean) { enabled = on; apply(); save() }
+    fun switchEnabled(on: Boolean) { enabled = on; apply(); save() }
 
     fun setLevel(band: Int, value: Int) {
         if (band !in levels.indices) return

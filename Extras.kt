@@ -72,7 +72,7 @@ private fun fxSliderColors() = SliderDefaults.colors(
 fun EqualizerPage(onBack: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         PageHeader("Equalizer", onBack) {
-            Switch(checked = AudioFx.enabled, onCheckedChange = { AudioFx.setEnabled(it) })
+            Switch(checked = AudioFx.enabled, onCheckedChange = { AudioFx.switchEnabled(it) })
         }
         Column(
             Modifier
