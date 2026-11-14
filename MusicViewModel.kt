@@ -117,7 +117,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         store.lockScreenEnabled = on
     }
 
-    fun setPlayerStyle(i: Int) {
+    fun applyPlayerStyle(i: Int) {
         playerStyle = i
         store.playerStyle = i
     }

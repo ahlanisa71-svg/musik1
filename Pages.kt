@@ -348,7 +348,7 @@ fun PlayerStylePage(vm: MusicViewModel, onBack: () -> Unit) {
                     Modifier
                         .fillMaxWidth()
                         .glass(RoundedCornerShape(24.dp), if (sel) 1.8f else 1f)
-                        .clickable { vm.setPlayerStyle(i) }
+                        .clickable { vm.applyPlayerStyle(i) }
                         .padding(12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
