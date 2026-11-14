@@ -13,7 +13,12 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
@@ -42,6 +47,9 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.NewReleases
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.PrivacyTip
+import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Person
@@ -62,6 +70,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -92,6 +101,8 @@ import com.glassplayer.app.MusicViewModel
 import com.glassplayer.app.data.Song
 import kotlinx.coroutines.launch
 
+private data class Nav(val detail: DetailKey?, val page: Page?, val tab: Int)
+
 private data class Sel(
     val songs: List<Song>,
     val initial: Set<String>,
@@ -113,6 +124,7 @@ private fun LazyListScope.songItems(
     headerAbove: Boolean,
     pad: Dp,
     onSelect: (List<Song>, Song) -> Unit,
+    base: Int = 0,
 ) {
     itemsIndexed(songs, key = { _, s -> s.uri }) { i, s ->
         SongRow(
@@ -122,7 +134,7 @@ private fun LazyListScope.songItems(
             favorite = s.uri in favSet,
             shape = rowShape(i, songs.size, headerAbove),
             actions = actions,
-            modifier = Modifier.padding(horizontal = pad),
+            modifier = Modifier.cascade(base + i).padding(horizontal = pad),
             onLongClick = { onSelect(songs, s) },
         ) { vm.playList(songs, i) }
     }
@@ -133,7 +145,7 @@ private fun LazyListScope.songItems(
 // =====================================================================
 
 @Composable
-fun AppRoot(vm: MusicViewModel) {
+fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -158,6 +170,31 @@ fun AppRoot(vm: MusicViewModel) {
         if (res.resultCode == Activity.RESULT_OK && list != null) vm.onDeleteDone(list)
         vm.clearPendingDelete()
     }
+    var pendingEdit by remember { mutableStateOf<EditReq?>(null) }
+    val editLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
+        val r = pendingEdit
+        pendingEdit = null
+        if (res.resultCode == Activity.RESULT_OK && r != null) {
+            val ok = applySongEdit(ctx, r)
+            Toast.makeText(ctx, if (ok) "Info lagu diperbarui" else "Gagal memperbarui info lagu", Toast.LENGTH_SHORT).show()
+            if (ok) vm.loadSongs()
+        }
+    }
+    val saveEdit: (EditReq) -> Unit = { r ->
+        if (Build.VERSION.SDK_INT >= 30) {
+            try {
+                val sender = MediaStore.createWriteRequest(ctx.contentResolver, listOf(Uri.parse(r.song.uri))).intentSender
+                pendingEdit = r
+                editLauncher.launch(IntentSenderRequest.Builder(sender).build())
+            } catch (e: Exception) {
+                Toast.makeText(ctx, "Lagu ini tidak bisa diedit", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            val ok = applySongEdit(ctx, r)
+            Toast.makeText(ctx, if (ok) "Info lagu diperbarui" else "Gagal memperbarui info lagu", Toast.LENGTH_SHORT).show()
+            if (ok) vm.loadSongs()
+        }
+    }
     val pendingDel = vm.pendingDelete
     LaunchedEffect(pendingDel) {
         if (pendingDel != null && Build.VERSION.SDK_INT >= 30) {
@@ -173,8 +210,10 @@ fun AppRoot(vm: MusicViewModel) {
         }
     }
 
-    LaunchedEffect(Unit) {
-        if (granted) vm.ensureLoaded()
+    LaunchedEffect(Unit) { if (granted) vm.ensureLoaded() }
+    // Dialog izin baru muncul SETELAH animasi pembuka selesai, supaya animasi tidak terganggu.
+    LaunchedEffect(revealed) {
+        if (!revealed) return@LaunchedEffect
         val need = buildList {
             if (!granted) add(audioPerm)
             if (Build.VERSION.SDK_INT >= 33 &&
@@ -226,6 +265,10 @@ fun AppRoot(vm: MusicViewModel) {
     var showNewPlaylist by remember { mutableStateOf(false) }
     var afterCreate by remember { mutableStateOf<((String) -> Unit)?>(null) }
     var showSleep by remember { mutableStateOf(false) }
+    var showPrivacy by remember { mutableStateOf(false) }
+    var detailSong by remember { mutableStateOf<Song?>(null) }
+    var editSong by remember { mutableStateOf<Song?>(null) }
+    var showAbout by remember { mutableStateOf(false) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
 
     LaunchedEffect(vm.pendingTab) {
@@ -242,6 +285,8 @@ fun AppRoot(vm: MusicViewModel) {
             onToggleFav = { vm.toggleFavorite(it) },
             onAddToPlaylist = { addTargets = listOf(it) },
             onDelete = { vm.requestDelete(listOf(it)) },
+            onDetails = { detailSong = it },
+            onEdit = { editSong = it },
         )
     }
     val onSelect: (List<Song>, Song) -> Unit = { list, s -> selection = Sel(list, setOf(s.uri)) }
@@ -268,6 +313,9 @@ fun AppRoot(vm: MusicViewModel) {
                     onSettings = { detail = null; page = Page.Settings; scope.launch { drawerState.close() } },
                     onStyle = { detail = null; page = Page.Style; scope.launch { drawerState.close() } },
                     onWidgets = { detail = null; page = Page.Widgets; scope.launch { drawerState.close() } },
+                    onPrivacy = { showPrivacy = true; scope.launch { drawerState.close() } },
+                    onBug = { sendBugReport(ctx); scope.launch { drawerState.close() } },
+                    onAbout = { showAbout = true; scope.launch { drawerState.close() } },
                 )
             }
         },
@@ -276,8 +324,17 @@ fun AppRoot(vm: MusicViewModel) {
             GlassBackground()
 
             Box(Modifier.fillMaxSize().statusBarsPadding()) {
-                val d = detail
-                val pg = page
+              AnimatedContent(
+                targetState = Nav(detail, page, tab),
+                transitionSpec = {
+                    fadeIn(tween(200)) togetherWith fadeOut(tween(120))
+                },
+                label = "nav",
+              ) { st ->
+               val born = remember { android.os.SystemClock.uptimeMillis() }
+               CompositionLocalProvider(LocalScreenBorn provides born, LocalScreenReady provides revealed) {
+                val d = st.detail
+                val pg = st.page
                 when {
                     d != null -> {
                         val list = vm.listFor(d)
@@ -292,6 +349,8 @@ fun AppRoot(vm: MusicViewModel) {
                                     actions.onPlayNext, actions.onAddToQueue, actions.onToggleFav,
                                     actions.onAddToPlaylist, actions.onDelete,
                                     onRemoveFromPlaylist = { s -> vm.removeFromPlaylist(name, s) },
+                                    onDetails = actions.onDetails,
+                                    onEdit = actions.onEdit,
                                 ) else actions,
                             onBack = { detail = null },
                             onDelete = if (name != null) ({ vm.deletePlaylist(name); detail = null }) else null,
@@ -309,9 +368,12 @@ fun AppRoot(vm: MusicViewModel) {
                             onSleep = { showSleep = true },
                             onRescan = { vm.loadSongs() },
                             onPick = { pickFiles() },
+                            onPage = { page = it },
                         )
                         Page.Style -> PlayerStylePage(vm) { page = null }
                         Page.Widgets -> WidgetsPage(vm) { page = null }
+                        Page.Equalizer -> EqualizerPage { page = null }
+                        Page.Theme -> ThemePage { page = null }
                         Page.Playlists -> PlaylistsPage(
                             vm = vm,
                             onBack = { page = null },
@@ -319,7 +381,7 @@ fun AppRoot(vm: MusicViewModel) {
                             onNew = { afterCreate = null; showNewPlaylist = true },
                         )
                     }
-                    tab == 0 -> LibraryScreen(
+                    st.tab == 0 -> LibraryScreen(
                         vm = vm,
                         actions = actions,
                         onOpenDrawer = { scope.launch { drawerState.open() } },
@@ -331,7 +393,7 @@ fun AppRoot(vm: MusicViewModel) {
                         onSelect = onSelect,
                         onSelectMode = { list -> selection = Sel(list, emptySet()) },
                     )
-                    tab == 1 -> SearchScreen(vm, actions, query, { query = it }, onSelect)
+                    st.tab == 1 -> SearchScreen(vm, actions, query, { query = it }, onSelect)
                     else -> DetailScreen(
                         title = "Favorit",
                         songs = vm.listFor(DetailKey.Favorites),
@@ -344,6 +406,8 @@ fun AppRoot(vm: MusicViewModel) {
                         onSelect = onSelect,
                     )
                 }
+               }
+              }
             }
 
             Column(
@@ -388,6 +452,8 @@ fun AppRoot(vm: MusicViewModel) {
                     onAlbum = { showNow = false; page = null; detail = DetailKey.Album(it) },
                     onArtist = { showNow = false; page = null; detail = DetailKey.Artist(it) },
                     onWidgets = { showNow = false; detail = null; page = Page.Widgets },
+                    onEqualizer = { showNow = false; detail = null; page = Page.Equalizer },
+                    onDetails = { detailSong = it },
                 )
             }
         }
@@ -395,7 +461,7 @@ fun AppRoot(vm: MusicViewModel) {
 
     // ---- Dialog ----
     addTargets?.let { list ->
-        AlertDialog(
+        MusixDialog(
             onDismissRequest = { addTargets = null },
             containerColor = Color(0xFF26241B),
             titleContentColor = Color.White,
@@ -423,7 +489,7 @@ fun AppRoot(vm: MusicViewModel) {
 
     if (showNewPlaylist) {
         var name by remember { mutableStateOf(defaultPlaylistName(vm)) }
-        AlertDialog(
+        MusixDialog(
             onDismissRequest = { showNewPlaylist = false },
             containerColor = Color(0xFF26241B),
             titleContentColor = Color.White,
@@ -451,7 +517,7 @@ fun AppRoot(vm: MusicViewModel) {
     }
 
     if (showSleep) {
-        AlertDialog(
+        MusixDialog(
             onDismissRequest = { showSleep = false },
             containerColor = Color(0xFF26241B),
             titleContentColor = Color.White,
@@ -474,10 +540,15 @@ fun AppRoot(vm: MusicViewModel) {
         )
     }
 
+    detailSong?.let { SongDetailsDialog(it) { detailSong = null } }
+    editSong?.let { EditSongDialog(it, { editSong = null }, saveEdit) }
+    if (showPrivacy) PrivacyDialog { showPrivacy = false }
+    if (showAbout) AboutDialog { showAbout = false }
+
     // Android 10 ke bawah: konfirmasi sendiri sebelum hapus (Android 11+ memakai dialog sistem)
     val pd = vm.pendingDelete
     if (pd != null && Build.VERSION.SDK_INT < 30) {
-        AlertDialog(
+        MusixDialog(
             onDismissRequest = { vm.clearPendingDelete() },
             containerColor = Color(0xFF26241B),
             titleContentColor = Color.White,
@@ -589,9 +660,10 @@ private fun NewPlaylistCard(onClick: () -> Unit) {
 // =====================================================================
 
 @Composable
-private fun GroupRow(title: String, subtitle: String, art: Song?, icon: ImageVector?, shape: androidx.compose.ui.graphics.Shape, onClick: () -> Unit) {
+private fun GroupRow(index: Int, title: String, subtitle: String, art: Song?, icon: ImageVector?, shape: androidx.compose.ui.graphics.Shape, onClick: () -> Unit) {
     Row(
         Modifier
+            .cascade(index)
             .padding(horizontal = 16.dp)
             .fillMaxWidth()
             .clip(shape)
@@ -659,7 +731,7 @@ fun LibraryScreen(
         // Bilah atas: menu + kolom cari
         item {
             Row(
-                Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+                Modifier.cascade(0).padding(horizontal = 16.dp).fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 GlassIconButton(Icons.Rounded.Menu, "Menu", onOpenDrawer)
@@ -683,6 +755,7 @@ fun LibraryScreen(
         // Baris kartu kaca teratas
         item {
             LazyRow(
+                Modifier.cascade(1),
                 contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -704,7 +777,7 @@ fun LibraryScreen(
 
         // Panel kaca daftar putar
         item {
-            Column(Modifier.padding(horizontal = 16.dp).fillMaxWidth().glass()) {
+            Column(Modifier.cascade(2).padding(horizontal = 16.dp).fillMaxWidth().glass()) {
                 Row(
                     Modifier.padding(start = 18.dp, end = 12.dp, top = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -746,7 +819,7 @@ fun LibraryScreen(
         // Tab: Lagu / Artis / Album / Folder
         item {
             Row(
-                Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+                Modifier.cascade(3).padding(horizontal = 16.dp).fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 tabNames.forEachIndexed { i, n ->
@@ -776,6 +849,7 @@ fun LibraryScreen(
         item {
             Row(
                 Modifier
+                    .cascade(4)
                     .padding(horizontal = 16.dp)
                     .fillMaxWidth()
                     .clip(
@@ -842,20 +916,20 @@ fun LibraryScreen(
         }
 
         when (libTab) {
-            0 -> songItems(songs, vm, favSet, actions, headerAbove = true, pad = 16.dp, onSelect = onSelect)
+            0 -> songItems(songs, vm, favSet, actions, headerAbove = true, pad = 16.dp, onSelect = onSelect, base = 5)
             1 -> itemsIndexed(artists, key = { _, g -> g.first }) { i, (name, list) ->
-                GroupRow(name, "${list.size} lagu", list.firstOrNull(), Icons.Rounded.Person, rowShape(i, artists.size, true)) {
+                GroupRow(5 + i, name, "${list.size} lagu", list.firstOrNull(), Icons.Rounded.Person, rowShape(i, artists.size, true)) {
                     onDetail(DetailKey.Artist(name))
                 }
             }
             2 -> itemsIndexed(albumGroups, key = { _, g -> g.first }) { i, (name, list) ->
-                GroupRow(name, "${list.first().artist} • ${list.size} lagu", list.firstOrNull(), null, rowShape(i, albumGroups.size, true)) {
+                GroupRow(5 + i, name, "${list.first().artist} • ${list.size} lagu", list.firstOrNull(), null, rowShape(i, albumGroups.size, true)) {
                     onDetail(DetailKey.Album(name))
                 }
             }
             else -> itemsIndexed(folders, key = { _, g -> g.first }) { i, (name, list) ->
                 val label = name.trimEnd('/').substringAfterLast('/').ifBlank { "Penyimpanan" }
-                GroupRow(label, "${list.size} lagu • ${name.ifBlank { "/" }}", null, Icons.Rounded.Folder, rowShape(i, folders.size, true)) {
+                GroupRow(5 + i, label, "${list.size} lagu • ${name.ifBlank { "/" }}", null, Icons.Rounded.Folder, rowShape(i, folders.size, true)) {
                     onDetail(DetailKey.Folder(name))
                 }
             }
@@ -882,6 +956,7 @@ fun DetailScreen(
     val favSet = remember(vm.favorites) { vm.favorites.toSet() }
     LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 220.dp)) {
         item {
+          Column(Modifier.cascade(0)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (onBack != null) {
                     GlassIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Kembali", onBack)
@@ -909,6 +984,7 @@ fun DetailScreen(
                 GlassButton("Tambah lagu", Icons.Rounded.Add, onAddSongs, Modifier.fillMaxWidth())
             }
             Spacer(Modifier.height(14.dp))
+          }
         }
         if (songs.isEmpty()) {
             item {
@@ -920,7 +996,7 @@ fun DetailScreen(
                 )
             }
         }
-        songItems(songs, vm, favSet, actions, headerAbove = false, pad = 0.dp, onSelect = onSelect)
+        songItems(songs, vm, favSet, actions, headerAbove = false, pad = 0.dp, onSelect = onSelect, base = 1)
     }
 }
 
@@ -1012,6 +1088,9 @@ private fun DrawerContent(
     onSettings: () -> Unit,
     onStyle: () -> Unit,
     onWidgets: () -> Unit,
+    onPrivacy: () -> Unit,
+    onBug: () -> Unit,
+    onAbout: () -> Unit,
 ) {
     Column(Modifier.padding(20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1031,6 +1110,12 @@ private fun DrawerContent(
         DrawerItem(Icons.Rounded.Settings, "Setelan", onSettings)
         DrawerItem(Icons.Rounded.Palette, "Gaya pemutar", onStyle)
         DrawerItem(Icons.Rounded.Widgets, "Widget Layar utama", onWidgets)
+        Spacer(Modifier.height(8.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.12f)))
+        Spacer(Modifier.height(8.dp))
+        DrawerItem(Icons.Rounded.PrivacyTip, "Kebijakan Privasi", onPrivacy)
+        DrawerItem(Icons.Rounded.BugReport, "Laporan bug", onBug)
+        DrawerItem(Icons.Rounded.Info, "Tentang", onAbout)
     }
 }
 

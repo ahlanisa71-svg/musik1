@@ -21,6 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.*
+import com.glassplayer.app.data.AudioFx
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.BugReport
@@ -83,10 +85,12 @@ sealed interface Page {
     data object Style : Page
     data object Widgets : Page
     data object Playlists : Page
+    data object Equalizer : Page
+    data object Theme : Page
 }
 
 const val APP_NAME = "Musix"
-const val APP_VERSION = "1.2"
+const val APP_VERSION = "1.3"
 const val CONTACT_EMAIL = "rifqihisyammuddin429@gmail.com"
 const val IG_URL = "https://www.instagram.com/rifsy_am"
 const val IG_NAME = "rifsy_am"
@@ -222,10 +226,11 @@ fun SettingsPage(
     onSleep: () -> Unit,
     onRescan: () -> Unit,
     onPick: () -> Unit,
+    onPage: (Page) -> Unit,
 ) {
     val ctx = LocalContext.current
-    var privacy by remember { mutableStateOf(false) }
-    var about by remember { mutableStateOf(false) }
+    var showCf by remember { mutableStateOf(false) }
+    var showSpeed by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
         PageHeader("Setelan", onBack)
@@ -237,7 +242,7 @@ fun SettingsPage(
                 .padding(bottom = 200.dp),
         ) {
             Spacer(Modifier.height(6.dp))
-            Column(Modifier.fillMaxWidth().glass()) {
+            Column(Modifier.cascade(0).fillMaxWidth().glass()) {
                 SettingRow(
                     "Layar kunci kaca", "Tampil saat layar mati & musik jalan", Icons.Rounded.Lock,
                     onClick = { onToggleLock(!vm.lockScreenEnabled) },
@@ -251,13 +256,17 @@ fun SettingsPage(
                 SettingRow("Tambah file musik manual", null, Icons.Rounded.FolderOpen, onClick = onPick)
             }
             Spacer(Modifier.height(16.dp))
-            Column(Modifier.fillMaxWidth().glass()) {
-                SettingRow("Kebijakan Privasi", null, Icons.Rounded.PrivacyTip, onClick = { privacy = true })
+            Column(Modifier.cascade(1).fillMaxWidth().glass()) {
+                SettingRow("Equalizer", if (AudioFx.enabled) "Aktif" else "Mati", Icons.Rounded.GraphicEq, onClick = { onPage(Page.Equalizer) })
                 RowDivider()
-                SettingRow("Laporan bug", "Kirim laporan lewat email", Icons.Rounded.BugReport, onClick = { sendBugReport(ctx) })
+                SettingRow("Kecepatan putar", speedLabel(vm.playbackSpeed), Icons.Rounded.Speed, onClick = { showSpeed = true })
                 RowDivider()
-                SettingRow("Tentang", null, Icons.Rounded.Info, onClick = { about = true })
+                SettingRow("Crossfade", crossfadeLabel(vm.crossfadeSec), Icons.Rounded.SwapHoriz, onClick = { showCf = true })
                 RowDivider()
+                SettingRow("Tema warna", Palettes[AppTheme.index.coerceIn(0, Palettes.lastIndex)].name, Icons.Rounded.Palette, onClick = { onPage(Page.Theme) })
+            }
+            Spacer(Modifier.height(16.dp))
+            Column(Modifier.cascade(2).fillMaxWidth().glass()) {
                 SettingRow(
                     "Versi aplikasi", "$APP_NAME $APP_VERSION", Icons.Rounded.Info, onClick = {},
                     trailing = { Text("v$APP_VERSION", color = SubText, fontSize = 14.sp) },
@@ -271,60 +280,16 @@ fun SettingsPage(
                 fontSize = 13.sp,
                 modifier = Modifier.padding(start = 6.dp, bottom = 8.dp),
             )
-            Column(Modifier.fillMaxWidth().glass()) {
+            Column(Modifier.cascade(3).fillMaxWidth().glass()) {
                 SettingRow(IG_NAME, "Instagram", iconRes = R.drawable.ic_instagram, onClick = { openUrl(ctx, IG_URL) })
                 RowDivider()
                 SettingRow(FB_NAME, "Facebook", iconRes = R.drawable.ic_facebook, onClick = { openUrl(ctx, FB_URL) })
-                RowDivider()
-                SettingRow(
-                    CONTACT_EMAIL, "Ada bug? Chat langsung lewat email", Icons.Rounded.Email,
-                    onClick = { composeEmail(ctx) },
-                )
             }
         }
     }
 
-    if (privacy) {
-        AlertDialog(
-            onDismissRequest = { privacy = false },
-            containerColor = Color(0xFF26241B),
-            titleContentColor = Color.White,
-            textContentColor = Color.White,
-            title = { Text("Kebijakan Privasi") },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    Text(
-                        "Musix adalah pemutar musik offline.\n\n" +
-                            "• Aplikasi tidak mengumpulkan, menyimpan di server, atau membagikan data pribadi Anda.\n" +
-                            "• Izin audio/penyimpanan hanya dipakai untuk membaca dan memutar file musik di perangkat.\n" +
-                            "• Izin notifikasi dipakai untuk kontrol pemutar di bilah notifikasi dan layar kunci.\n" +
-                            "• Izin tampil di atas aplikasi lain (opsional) dipakai untuk layar kunci kaca.\n" +
-                            "• Favorit, daftar putar, dan pengaturan hanya tersimpan di perangkat Anda.\n" +
-                            "• Tidak ada iklan dan tidak ada pelacak.\n\n" +
-                            "Pertanyaan? Hubungi $CONTACT_EMAIL",
-                        fontSize = 14.sp,
-                    )
-                }
-            },
-            confirmButton = { TextButton(onClick = { privacy = false }) { Text("Tutup", color = Accent) } },
-        )
-    }
-    if (about) {
-        AlertDialog(
-            onDismissRequest = { about = false },
-            containerColor = Color(0xFF26241B),
-            titleContentColor = Color.White,
-            textContentColor = Color.White,
-            title = { Text("Musix") },
-            text = {
-                Text(
-                    "Pemutar musik offline untuk semua format audio (MP3, M4A, FLAC, WAV, OGG, OPUS, dll). " +
-                        "Berjalan di latar belakang dan di layar kunci.\n\nVersi $APP_VERSION"
-                )
-            },
-            confirmButton = { TextButton(onClick = { about = false }) { Text("OK", color = Accent) } },
-        )
-    }
+    if (showSpeed) SpeedDialog(vm.playbackSpeed, { vm.setSpeed(it) }) { showSpeed = false }
+    if (showCf) CrossfadeDialog(vm.crossfadeSec, { vm.setCrossfade(it) }) { showCf = false }
 }
 
 // ---------------------------------------------------------------------
@@ -346,6 +311,7 @@ fun PlayerStylePage(vm: MusicViewModel, onBack: () -> Unit) {
                 val sel = vm.playerStyle == i
                 Column(
                     Modifier
+                        .cascade(i)
                         .fillMaxWidth()
                         .glass(RoundedCornerShape(24.dp), if (sel) 1.8f else 1f)
                         .clickable { vm.applyPlayerStyle(i) }
@@ -391,9 +357,9 @@ fun PlayerStylePage(vm: MusicViewModel, onBack: () -> Unit) {
 // ---------------------------------------------------------------------
 
 @Composable
-private fun WidgetCard(title: String, desc: String, onAdd: () -> Unit, preview: @Composable () -> Unit) {
+private fun WidgetCard(index: Int, title: String, desc: String, onAdd: () -> Unit, preview: @Composable () -> Unit) {
     Column(
-        Modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp)).padding(14.dp),
+        Modifier.cascade(index).fillMaxWidth().glass(RoundedCornerShape(24.dp)).padding(14.dp),
     ) {
         preview()
         Spacer(Modifier.height(10.dp))
@@ -448,7 +414,7 @@ fun WidgetsPage(vm: MusicViewModel, onBack: () -> Unit) {
                 color = SubText, fontSize = 13.sp,
             )
 
-            WidgetCard("Cari dan putar", "Pemutar mini + kolom cari", { pinWidget(ctx, PlayerSearchWidget::class.java) }) {
+            WidgetCard(0, "Cari dan putar", "Pemutar mini + kolom cari", { pinWidget(ctx, PlayerSearchWidget::class.java) }) {
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(WidgetBrush).padding(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         MiniCover(s, Modifier.size(44.dp))
@@ -467,7 +433,7 @@ fun WidgetsPage(vm: MusicViewModel, onBack: () -> Unit) {
                 }
             }
 
-            WidgetCard("Lagu terbaru", "Pemutar mini + 4 lagu terakhir", { pinWidget(ctx, RecentWidget::class.java) }) {
+            WidgetCard(1, "Lagu terbaru", "Pemutar mini + 4 lagu terakhir", { pinWidget(ctx, RecentWidget::class.java) }) {
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(WidgetBrush).padding(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         MiniCover(s, Modifier.size(40.dp))
@@ -486,7 +452,7 @@ fun WidgetsPage(vm: MusicViewModel, onBack: () -> Unit) {
                 }
             }
 
-            WidgetCard("Rekomendasi", "Kartu persegi, ketuk untuk putar acak", { pinWidget(ctx, RecommendWidget::class.java) }) {
+            WidgetCard(2, "Rekomendasi", "Kartu persegi, ketuk untuk putar acak", { pinWidget(ctx, RecommendWidget::class.java) }) {
                 Box(Modifier.size(120.dp).clip(RoundedCornerShape(22.dp)).background(WidgetBrush)) {
                     MiniCover(s, Modifier.fillMaxSize(), RoundedCornerShape(0.dp))
                     Box(
@@ -501,7 +467,7 @@ fun WidgetsPage(vm: MusicViewModel, onBack: () -> Unit) {
                 }
             }
 
-            WidgetCard("Kapsul", "Kontrol cepat putar/jeda", { pinWidget(ctx, CapsuleWidget::class.java) }) {
+            WidgetCard(3, "Kapsul", "Kontrol cepat putar/jeda", { pinWidget(ctx, CapsuleWidget::class.java) }) {
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -574,6 +540,7 @@ fun PlaylistsPage(
                     val list = vm.songsOf(vm.playlists[name].orEmpty())
                     Row(
                         Modifier
+                            .cascade(i + 1)
                             .fillMaxWidth()
                             .clip(rowShape(i, names.size, headerAbove = true))
                             .background(Color.Black.copy(alpha = 0.14f))
@@ -750,4 +717,53 @@ fun SelectionScreen(
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------
+//  Dialog (dibuka dari menu samping)
+// ---------------------------------------------------------------------
+
+@Composable
+fun PrivacyDialog(onDismiss: () -> Unit) {
+    MusixDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF26241B),
+        titleContentColor = Color.White,
+        textContentColor = Color.White,
+        title = { Text("Kebijakan Privasi") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    "Musix adalah pemutar musik offline.\n\n" +
+                        "• Aplikasi tidak mengumpulkan, menyimpan di server, atau membagikan data pribadi Anda.\n" +
+                        "• Izin audio/penyimpanan hanya dipakai untuk membaca dan memutar file musik di perangkat.\n" +
+                        "• Izin notifikasi dipakai untuk kontrol pemutar di bilah notifikasi dan layar kunci.\n" +
+                        "• Izin tampil di atas aplikasi lain (opsional) dipakai untuk layar kunci kaca.\n" +
+                        "• Favorit, daftar putar, dan pengaturan hanya tersimpan di perangkat Anda.\n" +
+                        "• Tidak ada iklan dan tidak ada pelacak.\n\n" +
+                        "Pertanyaan? Hubungi $CONTACT_EMAIL",
+                    fontSize = 14.sp,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Tutup", color = Accent) } },
+    )
+}
+
+@Composable
+fun AboutDialog(onDismiss: () -> Unit) {
+    MusixDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF26241B),
+        titleContentColor = Color.White,
+        textContentColor = Color.White,
+        title = { Text(APP_NAME) },
+        text = {
+            Text(
+                "Pemutar musik offline untuk semua format audio (MP3, M4A, FLAC, WAV, OGG, OPUS, dll). " +
+                    "Berjalan di latar belakang dan di layar kunci.\n\nVersi $APP_VERSION"
+            )
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("OK", color = Accent) } },
+    )
 }

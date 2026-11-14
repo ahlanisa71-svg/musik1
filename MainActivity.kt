@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -37,6 +38,8 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
+        com.glassplayer.app.ui.AppTheme.index = com.glassplayer.app.data.Store(this).themeIndex
+        com.glassplayer.app.data.AudioFx.load(this)
         handleIntent(intent)
 
         // Mulai memindai musik di latar belakang SELAMA animasi pembuka berjalan,
@@ -57,14 +60,18 @@ class MainActivity : ComponentActivity() {
                         phase = 1
                     }
                     if (phase == 1) {
-                        delay(350)
+                        // Tunggu layar utama benar-benar selesai digambar (bisa lama di peluncuran pertama),
+                        // baru animasi pembuka dihilangkan.
+                        withFrameNanos { }
+                        withFrameNanos { }
+                        delay(200)
                         phase = 2
                     }
                 }
                 Box(Modifier.fillMaxSize()) {
                     // Layar utama baru disusun SETELAH animasi hampir selesai,
                     // supaya animasi tidak patah-patah karena kerja berat di awal.
-                    if (phase >= 1) AppRoot(vm)
+                    if (phase >= 1) AppRoot(vm, revealed = phase >= 2)
                     AnimatedVisibility(visible = phase < 2, exit = fadeOut(tween(300))) {
                         SplashScreen()
                     }

@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -117,6 +118,22 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         store.lockScreenEnabled = on
     }
 
+    var playbackSpeed by mutableFloatStateOf(store.speed)
+    var crossfadeSec by mutableIntStateOf(store.crossfadeSec)
+
+    fun setSpeed(v: Float) {
+        playbackSpeed = v
+        store.speed = v
+        controller?.setPlaybackSpeed(v)
+    }
+
+    fun setCrossfade(sec: Int) {
+        crossfadeSec = sec
+        store.crossfadeSec = sec
+    }
+
+    fun pauseIfPlaying() { controller?.pause() }
+
     fun applyPlayerStyle(i: Int) {
         playerStyle = i
         store.playerStyle = i
@@ -152,6 +169,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         future.addListener({
             val c = try { future.get() } catch (_: Exception) { return@addListener }
             controller = c
+            c.setPlaybackSpeed(playbackSpeed)
             c.addListener(object : Player.Listener {
                 override fun onEvents(player: Player, events: Player.Events) =
                     sync(c, events.contains(Player.EVENT_TIMELINE_CHANGED))

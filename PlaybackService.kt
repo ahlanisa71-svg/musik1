@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import androidx.core.content.ContextCompat
+import com.glassplayer.app.data.AudioFx
 import com.glassplayer.app.data.Store
 import com.glassplayer.app.widget.WidgetUpdater
 import androidx.media3.common.MediaItem
@@ -57,7 +58,34 @@ class PlaybackService : MediaSessionService() {
         handler.removeCallbacks(widgetRunnable)
         handler.postDelayed(widgetRunnable, 300)
     }
+    private val store by lazy { Store(this) }
+
+    // Transisi memudar antar lagu (crossfade): volume turun di ujung lagu & naik di awal lagu berikutnya.
+    private val fadeRunnable = object : Runnable {
+        override fun run() {
+            val p = session?.player
+            val cfMs = store.crossfadeSec * 1000L
+            if (p != null) {
+                var vol = 1f
+                if (cfMs > 0 && p.isPlaying) {
+                    val dur = p.duration
+                    val pos = p.currentPosition
+                    if (dur != C.TIME_UNSET && dur > cfMs * 2) {
+                        val rem = dur - pos
+                        if (rem < cfMs) vol = (rem.toFloat() / cfMs).coerceIn(0f, 1f)
+                        else if (pos < cfMs) vol = (pos.toFloat() / cfMs).coerceIn(0.05f, 1f)
+                    }
+                }
+                if (Math.abs(p.volume - vol) > 0.01f) p.volume = vol
+            }
+            handler.postDelayed(this, if (cfMs > 0) 100L else 1000L)
+        }
+    }
+
     private val widgetListener = object : Player.Listener {
+        override fun onAudioSessionIdChanged(audioSessionId: Int) {
+            AudioFx.attach(audioSessionId)
+        }
         override fun onIsPlayingChanged(isPlaying: Boolean) = scheduleWidget()
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = scheduleWidget()
     }
@@ -140,6 +168,9 @@ class PlaybackService : MediaSessionService() {
         )
 
         player.addListener(widgetListener)
+        AudioFx.load(this)
+        AudioFx.attach(player.audioSessionId)
+        handler.post(fadeRunnable)
         session = MediaSession.Builder(this, player)
             .setCallback(callback)
             .setSessionActivity(openApp)
@@ -157,6 +188,8 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         handler.removeCallbacks(sleepRunnable)
         handler.removeCallbacks(widgetRunnable)
+        handler.removeCallbacks(fadeRunnable)
+        AudioFx.release()
         scope.cancel()
         try { unregisterReceiver(screenOffReceiver) } catch (_: Exception) {}
         session?.run {

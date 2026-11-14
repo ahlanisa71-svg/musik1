@@ -1,6 +1,35 @@
 package com.glassplayer.app.ui
 
 import android.graphics.Bitmap
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.launch
+import androidx.compose.animation.AnimatedVisibility as DlgAnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState as dlgAnimateFloat
+import androidx.compose.animation.fadeIn as dlgFadeIn
+import androidx.compose.animation.scaleIn as dlgScaleIn
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ProvideTextStyle
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.compose.animation.core.Animatable
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
+import android.os.SystemClock
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.ui.composed
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -52,6 +81,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -67,6 +97,27 @@ import kotlin.math.abs
 
 val GroupRadius = 26.dp
 
+/** Waktu (uptime) saat layar saat ini mulai tampil; dipakai agar animasi beruntun hanya jalan saat layar baru dibuka. */
+val LocalScreenBorn = compositionLocalOf { 0L }
+
+/** false selama animasi pembuka masih tampil; animasi beruntun menunggu sampai true. */
+val LocalScreenReady = compositionLocalOf { true }
+
+/** Muncul beruntun dari atas dengan fade: item ke-[index] tampil sedikit setelah item sebelumnya. */
+fun Modifier.cascade(index: Int): Modifier = composed {
+    val born = LocalScreenBorn.current
+    val ready = LocalScreenReady.current
+    val animate = remember { index < 14 && SystemClock.uptimeMillis() - born < 700L }
+    val a = remember { Animatable(if (animate) 0f else 1f) }
+    LaunchedEffect(ready) {
+        if (animate && ready) a.animateTo(1f, tween(420, delayMillis = index * 55, easing = FastOutSlowInEasing))
+    }
+    graphicsLayer {
+        alpha = a.value
+        translationY = (1f - a.value) * -32.dp.toPx()
+    }
+}
+
 /** Bentuk baris dalam satu kelompok daftar (sudut membulat hanya di ujung atas/bawah). */
 fun rowShape(index: Int, count: Int, headerAbove: Boolean): Shape {
     val top = if (index == 0 && !headerAbove) GroupRadius else 0.dp
@@ -81,6 +132,8 @@ class SongActions(
     val onAddToPlaylist: (Song) -> Unit,
     val onDelete: (Song) -> Unit,
     val onRemoveFromPlaylist: ((Song) -> Unit)? = null,
+    val onDetails: ((Song) -> Unit)? = null,
+    val onEdit: ((Song) -> Unit)? = null,
 )
 
 @Composable
@@ -179,7 +232,7 @@ fun SongMenuDialog(
                 .padding(horizontal = 8.dp, vertical = 13.dp),
         )
     }
-    AlertDialog(
+    MusixDialog(
         onDismissRequest = onDismiss,
         containerColor = Color(0xFF26241B),
         title = {
@@ -192,6 +245,8 @@ fun SongMenuDialog(
                 Item("Tambah ke daftar putar") { actions.onAddToPlaylist(song) }
                 Item(if (favorite) "Hapus dari favorit" else "Tambah ke favorit") { actions.onToggleFav(song) }
                 actions.onRemoveFromPlaylist?.let { rm -> Item("Hapus dari daftar putar ini") { rm(song) } }
+                actions.onDetails?.let { d -> Item("Detail lagu") { d(song) } }
+                actions.onEdit?.let { e -> Item("Edit info lagu") { e(song) } }
                 Item("Hapus", Color(0xFFFF8A80)) { actions.onDelete(song) }
             }
         },
@@ -258,9 +313,68 @@ fun SongRow(
 @Composable
 fun MiniPlayer(vm: MusicViewModel, onClick: () -> Unit) {
     val song = vm.currentSong ?: return
+    var dismissed by remember { mutableStateOf(false) }
+    LaunchedEffect(vm.isPlaying, vm.currentId) { if (vm.isPlaying) dismissed = false }
+    if (dismissed) return
+    val dx = remember { Animatable(0f) }
+    val dy = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
     Column(
         Modifier
             .fillMaxWidth()
+            .graphicsLayer {
+                translationX = dx.value
+                translationY = dy.value
+                alpha = 1f - (abs(dx.value) / 900f + dy.value / 500f).coerceIn(0f, 0.6f)
+            }
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragEnd = {
+                        scope.launch {
+                            val x = dx.value
+                            val y = dy.value
+                            when {
+                                y > 110f && y > abs(x) -> {
+                                    dy.animateTo(420f, tween(160))
+                                    vm.pauseIfPlaying()
+                                    dismissed = true
+                                    dx.snapTo(0f)
+                                    dy.snapTo(0f)
+                                }
+                                x < -140f -> {
+                                    dx.animateTo(-640f, tween(140))
+                                    vm.next()
+                                    dx.snapTo(640f)
+                                    dx.animateTo(0f, tween(220))
+                                }
+                                x > 140f -> {
+                                    dx.animateTo(640f, tween(140))
+                                    vm.previous()
+                                    dx.snapTo(-640f)
+                                    dx.animateTo(0f, tween(220))
+                                }
+                                else -> {
+                                    launch { dx.animateTo(0f, spring()) }
+                                    dy.animateTo(0f, spring())
+                                }
+                            }
+                        }
+                    },
+                    onDragCancel = {
+                        scope.launch {
+                            launch { dx.animateTo(0f, spring()) }
+                            dy.animateTo(0f, spring())
+                        }
+                    },
+                    onDrag = { change, amount ->
+                        change.consume()
+                        scope.launch {
+                            dx.snapTo(dx.value + amount.x)
+                            dy.snapTo((dy.value + amount.y).coerceAtLeast(0f))
+                        }
+                    },
+                )
+            }
             .glass(RoundedCornerShape(24.dp), 1.2f)
             .clickable(onClick = onClick)
     ) {
@@ -268,7 +382,8 @@ fun MiniPlayer(vm: MusicViewModel, onClick: () -> Unit) {
             Modifier.padding(start = 10.dp, end = 6.dp, top = 8.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ArtImage(song, Modifier.size(44.dp), CircleShape)
+            val spin = rememberSpin(vm.isPlaying, 24f)
+            ArtImage(song, Modifier.size(44.dp).graphicsLayer { rotationZ = spin.value }, CircleShape)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(song.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -327,6 +442,77 @@ fun BottomBar(selected: Int, onSelect: (Int) -> Unit) {
                     color = if (sel) Color.White else Color.White.copy(alpha = 0.65f),
                     fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
                 )
+            }
+        }
+    }
+}
+
+
+/**
+ * Pengganti AlertDialog tanpa animasi jendela bawaan sistem (yang tampak "dobel/berhantu").
+ * Animasi masuk dibuat sendiri: scrim memudar + kartu membesar halus.
+ */
+@Composable
+fun MusixDialog(
+    onDismissRequest: () -> Unit,
+    confirmButton: @Composable () -> Unit,
+    dismissButton: (@Composable () -> Unit)? = null,
+    title: (@Composable () -> Unit)? = null,
+    text: (@Composable () -> Unit)? = null,
+    containerColor: Color = Color(0xFF26241B),
+    titleContentColor: Color = Color.White,
+    textContentColor: Color = Color.White,
+) {
+    Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        val view = LocalView.current
+        SideEffect {
+            val w = (view.parent as? DialogWindowProvider)?.window
+            w?.setWindowAnimations(-1)
+            w?.setDimAmount(0f)
+        }
+        var shown by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { shown = true }
+        val scrim by dlgAnimateFloat(if (shown) 0.55f else 0f, tween(220), label = "scrim")
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = scrim))
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismissRequest),
+            contentAlignment = Alignment.Center,
+        ) {
+            DlgAnimatedVisibility(
+                visible = shown,
+                enter = dlgFadeIn(tween(200)) + dlgScaleIn(tween(240), initialScale = 0.92f),
+            ) {
+                Column(
+                    Modifier
+                        .padding(horizontal = 28.dp)
+                        .widthIn(max = 420.dp)
+                        .clip(RoundedCornerShape(28.dp))
+                        .background(containerColor)
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {})
+                        .padding(24.dp),
+                ) {
+                    if (title != null) {
+                        CompositionLocalProvider(LocalContentColor provides titleContentColor) {
+                            ProvideTextStyle(MaterialTheme.typography.headlineSmall.copy(fontSize = 22.sp)) { title() }
+                        }
+                        Spacer(Modifier.height(16.dp))
+                    }
+                    if (text != null) {
+                        CompositionLocalProvider(LocalContentColor provides textContentColor) {
+                            ProvideTextStyle(MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp)) { text() }
+                        }
+                        Spacer(Modifier.height(20.dp))
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        dismissButton?.invoke()
+                        confirmButton()
+                    }
+                }
             }
         }
     }

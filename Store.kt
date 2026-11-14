@@ -20,6 +20,25 @@ class Store(ctx: Context) {
         get() = sp.getInt("player_style", 0)
         set(v) { sp.edit().putInt("player_style", v).apply() }
 
+    var eqEnabled: Boolean
+        get() = sp.getBoolean("eq_on", false)
+        set(v) { sp.edit().putBoolean("eq_on", v).apply() }
+    var eqLevels: String
+        get() = sp.getString("eq_levels", "") ?: ""
+        set(v) { sp.edit().putString("eq_levels", v).apply() }
+    var bassStrength: Int
+        get() = sp.getInt("bass", 0)
+        set(v) { sp.edit().putInt("bass", v).apply() }
+    var speed: Float
+        get() = sp.getFloat("speed", 1f)
+        set(v) { sp.edit().putFloat("speed", v).apply() }
+    var crossfadeSec: Int
+        get() = sp.getInt("crossfade", 0)
+        set(v) { sp.edit().putInt("crossfade", v).apply() }
+    var themeIndex: Int
+        get() = sp.getInt("theme", 0)
+        set(v) { sp.edit().putInt("theme", v).apply() }
+
     // Status terakhir untuk widget layar utama (ditulis oleh PlaybackService)
     var widgetTitle: String
         get() = sp.getString("w_title", "") ?: ""

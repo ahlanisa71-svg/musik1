@@ -6,6 +6,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Checkroom
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.MoreVert
@@ -89,8 +92,11 @@ fun NowPlayingScreen(
     onAlbum: (String) -> Unit,
     onArtist: (String) -> Unit,
     onWidgets: () -> Unit,
+    onEqualizer: () -> Unit,
+    onDetails: (Song) -> Unit,
 ) {
     val ctx = LocalContext.current
+    var showSpeed by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var queue by remember { mutableStateOf(false) }
     BackHandler(onBack = onClose)
@@ -153,6 +159,9 @@ fun NowPlayingScreen(
                         Item("Artis", Icons.Rounded.Person, song != null) { song?.let { onArtist(it.artist) } }
                         Item("Berbagi", Icons.Rounded.Share, song != null) { song?.let { shareSongs(ctx, listOf(it)) } }
                         Item("Hapus dari antrian", Icons.Rounded.RemoveCircleOutline, song != null) { vm.removeCurrentFromQueue() }
+                        Item("Kecepatan putar (${speedLabel(vm.playbackSpeed)})", Icons.Rounded.Speed) { showSpeed = true }
+                        Item("Equalizer", Icons.Rounded.GraphicEq) { onEqualizer() }
+                        Item("Detail lagu", Icons.Rounded.Info, song != null) { song?.let(onDetails) }
                         Item("Widget Layar utama", Icons.Rounded.Widgets) { onWidgets() }
                     }
                 }
@@ -251,8 +260,10 @@ fun NowPlayingScreen(
     }
     }
 
+    if (showSpeed) SpeedDialog(vm.playbackSpeed, { vm.setSpeed(it) }) { showSpeed = false }
+
     if (queue) {
-        AlertDialog(
+        MusixDialog(
             onDismissRequest = { queue = false },
             containerColor = Color(0xFF26241B),
             title = { Text("Antrian (${vm.queueIds.size})", color = Color.White) },

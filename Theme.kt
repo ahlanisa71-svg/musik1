@@ -47,6 +47,57 @@ val BgBrush = Brush.verticalGradient(
     1.00f to Color(0xFF0F0F0C),
 )
 
+class Palette(val name: String, val stops: List<Color>, val blobs: List<Color>)
+
+val Palettes = listOf(
+    Palette(
+        "Pasir (bawaan)",
+        listOf(Color(0xFFB9AC74), Color(0xFF8C8058), Color(0xFF3F3A29), Color(0xFF0F0F0C)),
+        listOf(Color(0x99FFE6A6), Color(0x80FF9F68), Color(0x70E88AA0), Color(0x704FB3A0)),
+    ),
+    Palette(
+        "Samudra",
+        listOf(Color(0xFF6FA8D6), Color(0xFF3E6F9E), Color(0xFF1B3350), Color(0xFF080F1A)),
+        listOf(Color(0x9990D0FF), Color(0x805BA8FF), Color(0x70A08CFF), Color(0x704FD3C4)),
+    ),
+    Palette(
+        "Hutan",
+        listOf(Color(0xFF8FBF8A), Color(0xFF4F8A5B), Color(0xFF21402B), Color(0xFF0A140D)),
+        listOf(Color(0x99C8F0A0), Color(0x806FCB7C), Color(0x70D6E08A), Color(0x704FB3A0)),
+    ),
+    Palette(
+        "Senja",
+        listOf(Color(0xFFE39A8A), Color(0xFFB05A7A), Color(0xFF4A2A52), Color(0xFF120C18)),
+        listOf(Color(0x99FFC0A0), Color(0x80FF7F9F), Color(0x70B68CFF), Color(0x70FFB36B)),
+    ),
+    Palette(
+        "Mawar",
+        listOf(Color(0xFFE8A0B4), Color(0xFFB86A86), Color(0xFF58344A), Color(0xFF160D13)),
+        listOf(Color(0x99FFD0DC), Color(0x80FF8FA8), Color(0x70D79BE8), Color(0x70FFB38A)),
+    ),
+    Palette(
+        "Malam",
+        listOf(Color(0xFF5A5F6B), Color(0xFF3A3E48), Color(0xFF1C1E25), Color(0xFF08090C)),
+        listOf(Color(0x66A0B4FF), Color(0x55B0A0FF), Color(0x55FFA0C0), Color(0x5560D0C0)),
+    ),
+)
+
+/** Tema warna aktif (disimpan di Store). */
+object AppTheme {
+    var index by androidx.compose.runtime.mutableIntStateOf(0)
+    val palette: Palette get() = Palettes[index.coerceIn(0, Palettes.lastIndex)]
+
+    fun brush(): Brush {
+        val c = palette.stops
+        return Brush.verticalGradient(0.00f to c[0], 0.30f to c[1], 0.62f to c[2], 1.00f to c[3])
+    }
+
+    fun set(ctx: android.content.Context, i: Int) {
+        index = i
+        com.glassplayer.app.data.Store(ctx.applicationContext).themeIndex = i
+    }
+}
+
 /** Lapisan latar yang direkam; panel kaca memburamkan salinannya sebagai "kaca buram". */
 val LocalBackdrop = staticCompositionLocalOf<GraphicsLayer?> { null }
 
@@ -135,7 +186,7 @@ fun DefaultBackdrop() {
     Box(
         Modifier
             .fillMaxSize()
-            .background(BgBrush)
+            .background(AppTheme.brush())
             .drawBehind {
                 fun blob(cx: Float, cy: Float, r: Float, c: Color) {
                     val center = Offset(size.width * cx, size.height * cy)
@@ -146,10 +197,11 @@ fun DefaultBackdrop() {
                         center = center,
                     )
                 }
-                blob(0.92f, 0.16f, 0.75f, Color(0x99FFE6A6))
-                blob(0.04f, 0.38f, 0.65f, Color(0x80FF9F68))
-                blob(0.88f, 0.60f, 0.65f, Color(0x70E88AA0))
-                blob(0.12f, 0.85f, 0.80f, Color(0x704FB3A0))
+                val b = AppTheme.palette.blobs
+                blob(0.92f, 0.16f, 0.75f, b[0])
+                blob(0.04f, 0.38f, 0.65f, b[1])
+                blob(0.88f, 0.60f, 0.65f, b[2])
+                blob(0.12f, 0.85f, 0.80f, b[3])
             }
     )
 }
