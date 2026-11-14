@@ -1,34 +1,26 @@
 package com.glassplayer.app.ui
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.provider.MediaStore
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -38,31 +30,34 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.Checklist
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.NewReleases
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.Sort
+import androidx.compose.material.icons.rounded.Widgets
+import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
@@ -88,6 +83,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -95,6 +91,42 @@ import com.glassplayer.app.DetailKey
 import com.glassplayer.app.MusicViewModel
 import com.glassplayer.app.data.Song
 import kotlinx.coroutines.launch
+
+private data class Sel(
+    val songs: List<Song>,
+    val initial: Set<String>,
+    val pick: Boolean = false,
+    val playlist: String? = null,
+)
+
+private fun defaultPlaylistName(vm: MusicViewModel): String {
+    var n = 1
+    while ("Daftar putar baru $n" in vm.playlists.keys) n++
+    return "Daftar putar baru $n"
+}
+
+private fun LazyListScope.songItems(
+    songs: List<Song>,
+    vm: MusicViewModel,
+    favSet: Set<String>,
+    actions: SongActions,
+    headerAbove: Boolean,
+    pad: Dp,
+    onSelect: (List<Song>, Song) -> Unit,
+) {
+    itemsIndexed(songs, key = { _, s -> s.uri }) { i, s ->
+        SongRow(
+            song = s,
+            current = vm.currentId == s.uri,
+            playing = vm.isPlaying,
+            favorite = s.uri in favSet,
+            shape = rowShape(i, songs.size, headerAbove),
+            actions = actions,
+            modifier = Modifier.padding(horizontal = pad),
+            onLongClick = { onSelect(songs, s) },
+        ) { vm.playList(songs, i) }
+    }
+}
 
 // =====================================================================
 //  Root
@@ -120,6 +152,26 @@ fun AppRoot(vm: MusicViewModel) {
         if (uris.isNotEmpty()) vm.addFiles(uris)
     }
     val pickFiles = { picker.launch(arrayOf("audio/*", "application/ogg")) }
+
+    val deleteLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
+        val list = vm.pendingDelete
+        if (res.resultCode == Activity.RESULT_OK && list != null) vm.onDeleteDone(list)
+        vm.clearPendingDelete()
+    }
+    val pendingDel = vm.pendingDelete
+    LaunchedEffect(pendingDel) {
+        if (pendingDel != null && Build.VERSION.SDK_INT >= 30) {
+            try {
+                val sender = MediaStore.createDeleteRequest(
+                    ctx.contentResolver, pendingDel.map { Uri.parse(it.uri) }
+                ).intentSender
+                deleteLauncher.launch(IntentSenderRequest.Builder(sender).build())
+            } catch (e: Exception) {
+                Toast.makeText(ctx, "Lagu ini tidak bisa dihapus dari sini", Toast.LENGTH_SHORT).show()
+                vm.clearPendingDelete()
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         if (granted) vm.ensureLoaded()
@@ -148,7 +200,7 @@ fun AppRoot(vm: MusicViewModel) {
                 Text("Izinkan akses musik", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Glass Player perlu izin untuk membaca file musik di perangkat Anda.",
+                    "Musix perlu izin untuk membaca file musik di perangkat Anda.",
                     color = SubText, textAlign = TextAlign.Center,
                 )
                 Spacer(Modifier.height(16.dp))
@@ -166,24 +218,44 @@ fun AppRoot(vm: MusicViewModel) {
 
     var tab by rememberSaveable { mutableStateOf(0) }
     var detail by remember { mutableStateOf<DetailKey?>(null) }
+    var page by remember { mutableStateOf<Page?>(null) }
     var showNow by remember { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
-    var addTarget by remember { mutableStateOf<Song?>(null) }
+    var selection by remember { mutableStateOf<Sel?>(null) }
+    var addTargets by remember { mutableStateOf<List<Song>?>(null) }
     var showNewPlaylist by remember { mutableStateOf(false) }
-    var newPlaylistFor by remember { mutableStateOf<Song?>(null) }
+    var afterCreate by remember { mutableStateOf<((String) -> Unit)?>(null) }
     var showSleep by remember { mutableStateOf(false) }
-    var showAbout by remember { mutableStateOf(false) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
+
+    LaunchedEffect(vm.pendingTab) {
+        vm.pendingTab?.let {
+            tab = it; detail = null; page = null; showNow = false; selection = null
+            vm.pendingTab = null
+        }
+    }
 
     val actions = remember(vm) {
         SongActions(
-            onPlayNext = vm::playNext,
-            onToggleFav = vm::toggleFavorite,
-            onAddToPlaylist = { addTarget = it },
+            onPlayNext = { vm.playNext(it) },
+            onAddToQueue = { vm.addToQueue(listOf(it)) },
+            onToggleFav = { vm.toggleFavorite(it) },
+            onAddToPlaylist = { addTargets = listOf(it) },
+            onDelete = { vm.requestDelete(listOf(it)) },
         )
     }
+    val onSelect: (List<Song>, Song) -> Unit = { list, s -> selection = Sel(list, setOf(s.uri)) }
+    val toggleLock: (Boolean) -> Unit = { on ->
+        vm.setLockScreen(on)
+        if (on && !Settings.canDrawOverlays(ctx)) {
+            ctx.startActivity(
+                Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}"))
+            )
+        }
+    }
 
-    BackHandler(enabled = detail == null && tab != 0) { tab = 0 }
+    BackHandler(enabled = detail == null && page == null && tab != 0) { tab = 0 }
+    BackHandler(enabled = page != null && detail == null) { page = null }
     BackHandler(enabled = detail != null) { detail = null }
 
     ModalNavigationDrawer(
@@ -193,19 +265,9 @@ fun AppRoot(vm: MusicViewModel) {
             ModalDrawerSheet(drawerContainerColor = Color(0xF01C1B15)) {
                 DrawerContent(
                     songCount = vm.allSongs.size,
-                    lockEnabled = vm.lockScreenEnabled,
-                    onToggleLock = { on ->
-                        vm.setLockScreen(on)
-                        if (on && !Settings.canDrawOverlays(ctx)) {
-                            ctx.startActivity(
-                                Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}"))
-                            )
-                        }
-                    },
-                    onRescan = { vm.loadSongs(); scope.launch { drawerState.close() } },
-                    onPick = { pickFiles(); scope.launch { drawerState.close() } },
-                    onSleep = { showSleep = true; scope.launch { drawerState.close() } },
-                    onAbout = { showAbout = true; scope.launch { drawerState.close() } },
+                    onSettings = { detail = null; page = Page.Settings; scope.launch { drawerState.close() } },
+                    onStyle = { detail = null; page = Page.Style; scope.launch { drawerState.close() } },
+                    onWidgets = { detail = null; page = Page.Widgets; scope.launch { drawerState.close() } },
                 )
             }
         },
@@ -215,6 +277,7 @@ fun AppRoot(vm: MusicViewModel) {
 
             Box(Modifier.fillMaxSize().statusBarsPadding()) {
                 val d = detail
+                val pg = page
                 when {
                     d != null -> {
                         val list = vm.listFor(d)
@@ -223,13 +286,37 @@ fun AppRoot(vm: MusicViewModel) {
                             title = detailTitle(d),
                             songs = list,
                             vm = vm,
+                            playlist = name,
                             actions = if (name != null)
                                 SongActions(
-                                    actions.onPlayNext, actions.onToggleFav, actions.onAddToPlaylist,
+                                    actions.onPlayNext, actions.onAddToQueue, actions.onToggleFav,
+                                    actions.onAddToPlaylist, actions.onDelete,
                                     onRemoveFromPlaylist = { s -> vm.removeFromPlaylist(name, s) },
                                 ) else actions,
                             onBack = { detail = null },
                             onDelete = if (name != null) ({ vm.deletePlaylist(name); detail = null }) else null,
+                            onAddSongs = if (name != null) ({
+                                selection = Sel(vm.songs, list.map { it.uri }.toSet(), pick = true, playlist = name)
+                            }) else null,
+                            onSelect = onSelect,
+                        )
+                    }
+                    pg != null -> when (pg) {
+                        Page.Settings -> SettingsPage(
+                            vm = vm,
+                            onBack = { page = null },
+                            onToggleLock = toggleLock,
+                            onSleep = { showSleep = true },
+                            onRescan = { vm.loadSongs() },
+                            onPick = { pickFiles() },
+                        )
+                        Page.Style -> PlayerStylePage(vm) { page = null }
+                        Page.Widgets -> WidgetsPage(vm) { page = null }
+                        Page.Playlists -> PlaylistsPage(
+                            vm = vm,
+                            onBack = { page = null },
+                            onOpen = { detail = DetailKey.Playlist(it) },
+                            onNew = { afterCreate = null; showNewPlaylist = true },
                         )
                     }
                     tab == 0 -> LibraryScreen(
@@ -238,17 +325,23 @@ fun AppRoot(vm: MusicViewModel) {
                         onOpenDrawer = { scope.launch { drawerState.open() } },
                         onSearch = { tab = 1 },
                         onDetail = { detail = it },
-                        onNewPlaylist = { newPlaylistFor = null; showNewPlaylist = true },
+                        onPlaylists = { page = Page.Playlists },
+                        onNewPlaylist = { afterCreate = null; showNewPlaylist = true },
                         onPickFiles = { pickFiles() },
+                        onSelect = onSelect,
+                        onSelectMode = { list -> selection = Sel(list, emptySet()) },
                     )
-                    tab == 1 -> SearchScreen(vm, actions, query) { query = it }
+                    tab == 1 -> SearchScreen(vm, actions, query, { query = it }, onSelect)
                     else -> DetailScreen(
                         title = "Favorit",
                         songs = vm.listFor(DetailKey.Favorites),
                         vm = vm,
+                        playlist = null,
                         actions = actions,
                         onBack = null,
                         onDelete = null,
+                        onAddSongs = null,
+                        onSelect = onSelect,
                     )
                 }
             }
@@ -261,7 +354,24 @@ fun AppRoot(vm: MusicViewModel) {
             ) {
                 MiniPlayer(vm) { showNow = true }
                 if (vm.currentSong != null) Spacer(Modifier.height(10.dp))
-                BottomBar(selected = tab) { tab = it; detail = null }
+                BottomBar(selected = tab) { tab = it; detail = null; page = null }
+            }
+
+            selection?.let { s ->
+                SelectionScreen(
+                    vm = vm,
+                    songs = s.songs,
+                    initial = s.initial,
+                    pickMode = s.pick,
+                    onClose = { selection = null },
+                    onPlayNext = { vm.playNextMany(it); selection = null },
+                    onAddToPlaylist = { addTargets = it; selection = null },
+                    onDelete = { vm.requestDelete(it); selection = null },
+                    onConfirm = { picked ->
+                        s.playlist?.let { vm.addManyToPlaylist(it, picked) }
+                        selection = null
+                    },
+                )
             }
 
             AnimatedVisibility(
@@ -269,58 +379,74 @@ fun AppRoot(vm: MusicViewModel) {
                 enter = slideInVertically { it },
                 exit = slideOutVertically { it },
             ) {
-                NowPlayingScreen(vm, onClose = { showNow = false }, onSleep = { showSleep = true })
+                NowPlayingScreen(
+                    vm,
+                    onClose = { showNow = false },
+                    onSleep = { showSleep = true },
+                    onStyle = { showNow = false; detail = null; page = Page.Style },
+                    onAddToPlaylist = { addTargets = listOf(it) },
+                    onAlbum = { showNow = false; page = null; detail = DetailKey.Album(it) },
+                    onArtist = { showNow = false; page = null; detail = DetailKey.Artist(it) },
+                    onWidgets = { showNow = false; detail = null; page = Page.Widgets },
+                )
             }
         }
     }
 
     // ---- Dialog ----
-    addTarget?.let { song ->
+    addTargets?.let { list ->
         AlertDialog(
-            onDismissRequest = { addTarget = null },
+            onDismissRequest = { addTargets = null },
             containerColor = Color(0xFF26241B),
             titleContentColor = Color.White,
             textContentColor = Color.White,
-            title = { Text("Tambah ke playlist") },
+            title = { Text("Tambah ke daftar putar") },
             text = {
                 Column {
                     vm.playlists.keys.forEach { name ->
-                        TextButton(onClick = { vm.addToPlaylist(name, song); addTarget = null }) {
+                        TextButton(onClick = { vm.addManyToPlaylist(name, list); addTargets = null }) {
                             Text(name, color = Color.White)
                         }
                     }
-                    TextButton(onClick = { newPlaylistFor = song; showNewPlaylist = true; addTarget = null }) {
-                        Text("+ Playlist baru", color = Accent)
+                    TextButton(onClick = {
+                        afterCreate = { n -> vm.addManyToPlaylist(n, list) }
+                        showNewPlaylist = true
+                        addTargets = null
+                    }) {
+                        Text("+ Daftar putar baru", color = Accent)
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { addTarget = null }) { Text("Tutup", color = Accent) } },
+            confirmButton = { TextButton(onClick = { addTargets = null }) { Text("Tutup", color = Accent) } },
         )
     }
 
     if (showNewPlaylist) {
-        var name by remember { mutableStateOf("") }
+        var name by remember { mutableStateOf(defaultPlaylistName(vm)) }
         AlertDialog(
             onDismissRequest = { showNewPlaylist = false },
             containerColor = Color(0xFF26241B),
             titleContentColor = Color.White,
-            title = { Text("Playlist baru") },
+            title = { Text("Nama daftar putar") },
             text = {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     singleLine = true,
-                    label = { Text("Nama playlist") },
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
-                    if (vm.createPlaylist(name)) newPlaylistFor?.let { vm.addToPlaylist(name.trim(), it) }
-                    newPlaylistFor = null
+                    val n = name.trim()
+                    if (vm.createPlaylist(n)) afterCreate?.invoke(n)
+                    else Toast.makeText(ctx, "Nama kosong atau sudah dipakai", Toast.LENGTH_SHORT).show()
+                    afterCreate = null
                     showNewPlaylist = false
-                }) { Text("Buat", color = Accent) }
+                }) { Text("Oke", color = Accent) }
             },
-            dismissButton = { TextButton(onClick = { showNewPlaylist = false }) { Text("Batal", color = Color.White) } },
+            dismissButton = {
+                TextButton(onClick = { afterCreate = null; showNewPlaylist = false }) { Text("Batal", color = Color.White) }
+            },
         )
     }
 
@@ -348,20 +474,22 @@ fun AppRoot(vm: MusicViewModel) {
         )
     }
 
-    if (showAbout) {
+    // Android 10 ke bawah: konfirmasi sendiri sebelum hapus (Android 11+ memakai dialog sistem)
+    val pd = vm.pendingDelete
+    if (pd != null && Build.VERSION.SDK_INT < 30) {
         AlertDialog(
-            onDismissRequest = { showAbout = false },
+            onDismissRequest = { vm.clearPendingDelete() },
             containerColor = Color(0xFF26241B),
             titleContentColor = Color.White,
             textContentColor = Color.White,
-            title = { Text("Glass Player") },
-            text = {
-                Text(
-                    "Pemutar musik offline untuk semua format audio (MP3, M4A, FLAC, WAV, OGG, OPUS, dll). " +
-                        "Berjalan di latar belakang dan di layar kunci."
-                )
+            title = { Text("Hapus ${pd.size} lagu?") },
+            text = { Text("File akan dihapus dari perangkat dan tidak bisa dikembalikan.") },
+            confirmButton = {
+                TextButton(onClick = { vm.deleteDirect(pd); vm.clearPendingDelete() }) {
+                    Text("Hapus", color = Color(0xFFFF8A80))
+                }
             },
-            confirmButton = { TextButton(onClick = { showAbout = false }) { Text("OK", color = Accent) } },
+            dismissButton = { TextButton(onClick = { vm.clearPendingDelete() }) { Text("Batal", color = Color.White) } },
         )
     }
 }
@@ -373,6 +501,8 @@ private fun detailTitle(k: DetailKey) = when (k) {
     DetailKey.Favorites -> "Favorit"
     is DetailKey.Playlist -> k.name
     is DetailKey.Album -> k.name
+    is DetailKey.Artist -> k.name
+    is DetailKey.Folder -> k.name.trimEnd('/').substringAfterLast('/').ifBlank { "Folder" }
 }
 
 // =====================================================================
@@ -449,7 +579,7 @@ private fun NewPlaylistCard(onClick: () -> Unit) {
             contentAlignment = Alignment.Center,
         ) { Icon(Icons.Rounded.Add, null, tint = Color.White, modifier = Modifier.size(40.dp)) }
         Spacer(Modifier.height(6.dp))
-        Text("Playlist baru", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text("Daftar putar baru", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
         Text(" ", fontSize = 11.sp)
     }
 }
@@ -459,16 +589,50 @@ private fun NewPlaylistCard(onClick: () -> Unit) {
 // =====================================================================
 
 @Composable
+private fun GroupRow(title: String, subtitle: String, art: Song?, icon: ImageVector?, shape: androidx.compose.ui.graphics.Shape, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .padding(horizontal = 16.dp)
+            .fillMaxWidth()
+            .clip(shape)
+            .background(Color.Black.copy(alpha = 0.14f))
+            .background(Color.White.copy(alpha = 0.11f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) {
+            Box(
+                Modifier.size(50.dp).clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center,
+            ) { Icon(icon, null, tint = Color.White) }
+        } else {
+            ArtImage(art, Modifier.size(50.dp), RoundedCornerShape(12.dp), seed = title)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(subtitle, color = SubText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Icon(Icons.Rounded.ChevronRight, null, tint = Color.White.copy(alpha = 0.6f))
+    }
+}
+
+@Composable
 fun LibraryScreen(
     vm: MusicViewModel,
     actions: SongActions,
     onOpenDrawer: () -> Unit,
     onSearch: () -> Unit,
     onDetail: (DetailKey) -> Unit,
+    onPlaylists: () -> Unit,
     onNewPlaylist: () -> Unit,
     onPickFiles: () -> Unit,
+    onSelect: (List<Song>, Song) -> Unit,
+    onSelectMode: (List<Song>) -> Unit,
 ) {
     val songs = vm.songs
+    var libTab by rememberSaveable { mutableStateOf(0) }
     val favSet = remember(vm.favorites) { vm.favorites.toSet() }
     val albums = remember(vm.allSongs) {
         vm.allSongs
@@ -478,6 +642,17 @@ fun LibraryScreen(
             .sortedByDescending { it.second.size }
             .take(15)
     }
+    val artists = remember(vm.allSongs) {
+        vm.allSongs.groupBy { it.artist }.map { it.key to it.value }.sortedBy { it.first.lowercase() }
+    }
+    val albumGroups = remember(vm.allSongs) {
+        vm.allSongs.filter { it.album.isNotBlank() }.groupBy { it.album }.map { it.key to it.value }
+            .sortedBy { it.first.lowercase() }
+    }
+    val folders = remember(vm.allSongs) {
+        vm.allSongs.groupBy { it.folder }.map { it.key to it.value }.sortedBy { it.first.lowercase() }
+    }
+    val tabNames = listOf("Lagu", "Artis", "Album", "Folder")
 
     LazyColumn(contentPadding = PaddingValues(top = 8.dp, bottom = 220.dp)) {
 
@@ -512,10 +687,13 @@ fun LibraryScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
-                    HomeTile("Terbaru", Icons.Rounded.History, vm.songsOf(vm.recents).firstOrNull()) { onDetail(DetailKey.Recent) }
+                    HomeTile("Favorit", Icons.Rounded.Favorite, vm.songsOf(vm.favorites).firstOrNull()) { onDetail(DetailKey.Favorites) }
                 }
                 item {
-                    HomeTile("Favorit", Icons.Rounded.Favorite, vm.songsOf(vm.favorites).firstOrNull()) { onDetail(DetailKey.Favorites) }
+                    HomeTile("Daftar putar", Icons.Rounded.PlaylistPlay, vm.songsOf(vm.playlists.values.firstOrNull().orEmpty()).firstOrNull(), onPlaylists)
+                }
+                item {
+                    HomeTile("Terkini", Icons.Rounded.History, vm.songsOf(vm.recents).firstOrNull()) { onDetail(DetailKey.Recent) }
                 }
                 item {
                     HomeTile("Baru Ditambah", Icons.Rounded.NewReleases, vm.listFor(DetailKey.Newest).firstOrNull()) { onDetail(DetailKey.Newest) }
@@ -524,14 +702,14 @@ fun LibraryScreen(
             Spacer(Modifier.height(16.dp))
         }
 
-        // Panel kaca playlist
+        // Panel kaca daftar putar
         item {
             Column(Modifier.padding(horizontal = 16.dp).fillMaxWidth().glass()) {
                 Row(
                     Modifier.padding(start = 18.dp, end = 12.dp, top = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Playlist", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text("Daftar putar", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     Row(
                         Modifier
                             .clip(CircleShape)
@@ -565,24 +743,63 @@ fun LibraryScreen(
             Spacer(Modifier.height(16.dp))
         }
 
-        // Kepala daftar semua lagu
+        // Tab: Lagu / Artis / Album / Folder
+        item {
+            Row(
+                Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                tabNames.forEachIndexed { i, n ->
+                    val sel = i == libTab
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .clip(CircleShape)
+                            .background(if (sel) Color.White else Color.White.copy(alpha = 0.16f))
+                            .clickable { libTab = i }
+                            .padding(vertical = 9.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            n,
+                            color = if (sel) Color.Black else Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+
+        // Baris "Acak daftar" + urut + pilih
         item {
             Row(
                 Modifier
                     .padding(horizontal = 16.dp)
                     .fillMaxWidth()
                     .clip(
-                        if (songs.isEmpty()) RoundedCornerShape(GroupRadius)
+                        if ((libTab == 0 && songs.isEmpty()) || (libTab != 0 && vm.allSongs.isEmpty())) RoundedCornerShape(GroupRadius)
                         else RoundedCornerShape(topStart = GroupRadius, topEnd = GroupRadius)
                     )
                     .background(Color.Black.copy(alpha = 0.14f))
                     .background(Color.White.copy(alpha = 0.11f))
-                    .padding(start = 18.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                    .padding(start = 6.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Semua Lagu", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Text("  ${songs.size}", color = SubText, fontSize = 14.sp)
-                Spacer(Modifier.weight(1f))
+                Row(
+                    Modifier
+                        .weight(1f)
+                        .clip(CircleShape)
+                        .clickable { vm.shuffleAll(songs) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.Shuffle, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text("Acak daftar", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    Text("  ${songs.size}", color = SubText, fontSize = 14.sp)
+                }
                 if (vm.loading) {
                     CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
                     Spacer(Modifier.width(8.dp))
@@ -595,10 +812,18 @@ fun LibraryScreen(
                     Spacer(Modifier.width(4.dp))
                     Text(vm.sortLabel, color = Color.White, fontSize = 12.sp)
                 }
+                Icon(
+                    Icons.Rounded.Checklist, "Pilih lagu", tint = Color.White,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .clickable { onSelectMode(songs) }
+                        .padding(8.dp),
+                )
             }
         }
 
-        if (songs.isEmpty() && !vm.loading) {
+        if (vm.allSongs.isEmpty() && !vm.loading) {
             item {
                 Column(
                     Modifier.padding(horizontal = 16.dp, vertical = 24.dp).fillMaxWidth().glass().padding(24.dp),
@@ -616,21 +841,30 @@ fun LibraryScreen(
             }
         }
 
-        itemsIndexed(songs, key = { _, s -> s.uri }) { i, s ->
-            SongRow(
-                song = s,
-                current = vm.currentId == s.uri,
-                favorite = s.uri in favSet,
-                shape = rowShape(i, songs.size, headerAbove = true),
-                actions = actions,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            ) { vm.playList(songs, i) }
+        when (libTab) {
+            0 -> songItems(songs, vm, favSet, actions, headerAbove = true, pad = 16.dp, onSelect = onSelect)
+            1 -> itemsIndexed(artists, key = { _, g -> g.first }) { i, (name, list) ->
+                GroupRow(name, "${list.size} lagu", list.firstOrNull(), Icons.Rounded.Person, rowShape(i, artists.size, true)) {
+                    onDetail(DetailKey.Artist(name))
+                }
+            }
+            2 -> itemsIndexed(albumGroups, key = { _, g -> g.first }) { i, (name, list) ->
+                GroupRow(name, "${list.first().artist} • ${list.size} lagu", list.firstOrNull(), null, rowShape(i, albumGroups.size, true)) {
+                    onDetail(DetailKey.Album(name))
+                }
+            }
+            else -> itemsIndexed(folders, key = { _, g -> g.first }) { i, (name, list) ->
+                val label = name.trimEnd('/').substringAfterLast('/').ifBlank { "Penyimpanan" }
+                GroupRow(label, "${list.size} lagu • ${name.ifBlank { "/" }}", null, Icons.Rounded.Folder, rowShape(i, folders.size, true)) {
+                    onDetail(DetailKey.Folder(name))
+                }
+            }
         }
     }
 }
 
 // =====================================================================
-//  Detail (daftar lagu: terbaru / favorit / playlist / album)
+//  Detail (daftar lagu: favorit / daftar putar / album / artis / folder)
 // =====================================================================
 
 @Composable
@@ -638,9 +872,12 @@ fun DetailScreen(
     title: String,
     songs: List<Song>,
     vm: MusicViewModel,
+    playlist: String?,
     actions: SongActions,
     onBack: (() -> Unit)?,
     onDelete: (() -> Unit)?,
+    onAddSongs: (() -> Unit)?,
+    onSelect: (List<Song>, Song) -> Unit,
 ) {
     val favSet = remember(vm.favorites) { vm.favorites.toSet() }
     LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 220.dp)) {
@@ -650,18 +887,26 @@ fun DetailScreen(
                     GlassIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Kembali", onBack)
                     Spacer(Modifier.width(12.dp))
                 }
+                if (playlist != null) {
+                    ArtImage(songs.firstOrNull(), Modifier.size(52.dp), RoundedCornerShape(14.dp), seed = title, iconSize = 24.dp)
+                    Spacer(Modifier.width(12.dp))
+                }
                 Column(Modifier.weight(1f)) {
                     Text(title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("${songs.size} lagu", color = SubText, fontSize = 13.sp)
+                    Text("Total ${songs.size} lagu", color = SubText, fontSize = 13.sp)
                 }
                 if (onDelete != null) {
-                    GlassIconButton(Icons.Rounded.Delete, "Hapus playlist", onDelete)
+                    GlassIconButton(Icons.Rounded.Delete, "Hapus daftar putar", onDelete)
                 }
             }
             Spacer(Modifier.height(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 GlassButton("Putar", Icons.Rounded.PlayArrow, { vm.playList(songs, 0, false) }, Modifier.weight(1f))
-                GlassButton("Acak", Icons.Rounded.Shuffle, { vm.shuffleAll(songs) }, Modifier.weight(1f))
+                GlassButton("Acak daftar", Icons.Rounded.Shuffle, { vm.shuffleAll(songs) }, Modifier.weight(1f))
+            }
+            if (onAddSongs != null) {
+                Spacer(Modifier.height(10.dp))
+                GlassButton("Tambah lagu", Icons.Rounded.Add, onAddSongs, Modifier.fillMaxWidth())
             }
             Spacer(Modifier.height(14.dp))
         }
@@ -675,15 +920,7 @@ fun DetailScreen(
                 )
             }
         }
-        itemsIndexed(songs, key = { _, s -> s.uri }) { i, s ->
-            SongRow(
-                song = s,
-                current = vm.currentId == s.uri,
-                favorite = s.uri in favSet,
-                shape = rowShape(i, songs.size, headerAbove = false),
-                actions = actions,
-            ) { vm.playList(songs, i) }
-        }
+        songItems(songs, vm, favSet, actions, headerAbove = false, pad = 0.dp, onSelect = onSelect)
     }
 }
 
@@ -692,7 +929,7 @@ fun DetailScreen(
 // =====================================================================
 
 @Composable
-fun SearchScreen(vm: MusicViewModel, actions: SongActions, query: String, onQuery: (String) -> Unit) {
+fun SearchScreen(vm: MusicViewModel, actions: SongActions, query: String, onQuery: (String) -> Unit, onSelect: (List<Song>, Song) -> Unit) {
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     val favSet = remember(vm.favorites) { vm.favorites.toSet() }
@@ -754,9 +991,11 @@ fun SearchScreen(vm: MusicViewModel, actions: SongActions, query: String, onQuer
                 SongRow(
                     song = s,
                     current = vm.currentId == s.uri,
+                    playing = vm.isPlaying,
                     favorite = s.uri in favSet,
                     shape = rowShape(i, results.size, headerAbove = false),
                     actions = actions,
+                    onLongClick = { onSelect(results, s) },
                 ) { vm.playList(results, i) }
             }
         }
@@ -770,12 +1009,9 @@ fun SearchScreen(vm: MusicViewModel, actions: SongActions, query: String, onQuer
 @Composable
 private fun DrawerContent(
     songCount: Int,
-    lockEnabled: Boolean,
-    onToggleLock: (Boolean) -> Unit,
-    onRescan: () -> Unit,
-    onPick: () -> Unit,
-    onSleep: () -> Unit,
-    onAbout: () -> Unit,
+    onSettings: () -> Unit,
+    onStyle: () -> Unit,
+    onWidgets: () -> Unit,
 ) {
     Column(Modifier.padding(20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -784,7 +1020,7 @@ private fun DrawerContent(
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.Rounded.Headphones, null, tint = Color.White, modifier = Modifier.size(28.dp)) }
             Spacer(Modifier.width(14.dp))
-            Text("Glass Player", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("Musix", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(18.dp))
         Column(Modifier.fillMaxWidth().glass().padding(16.dp)) {
@@ -792,26 +1028,9 @@ private fun DrawerContent(
             Text("$songCount lagu", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(14.dp))
-        DrawerItem(Icons.Rounded.Refresh, "Pindai ulang musik", onRescan)
-        DrawerItem(Icons.Rounded.FolderOpen, "Tambah file musik manual", onPick)
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .clickable { onToggleLock(!lockEnabled) }
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Rounded.Lock, null, tint = Color.White)
-            Spacer(Modifier.width(16.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Layar kunci kaca", color = Color.White, fontSize = 15.sp)
-                Text("Tampil saat layar mati & musik jalan", color = SubText, fontSize = 11.sp)
-            }
-            Switch(checked = lockEnabled, onCheckedChange = onToggleLock)
-        }
-        DrawerItem(Icons.Rounded.Bedtime, "Timer tidur", onSleep)
-        DrawerItem(Icons.Rounded.Info, "Tentang", onAbout)
+        DrawerItem(Icons.Rounded.Settings, "Setelan", onSettings)
+        DrawerItem(Icons.Rounded.Palette, "Gaya pemutar", onStyle)
+        DrawerItem(Icons.Rounded.Widgets, "Widget Layar utama", onWidgets)
     }
 }
 

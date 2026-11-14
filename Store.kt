@@ -16,6 +16,24 @@ class Store(ctx: Context) {
         get() = sp.getBoolean("lock_screen", false)
         set(v) { sp.edit().putBoolean("lock_screen", v).apply() }
 
+    var playerStyle: Int
+        get() = sp.getInt("player_style", 0)
+        set(v) { sp.edit().putInt("player_style", v).apply() }
+
+    // Status terakhir untuk widget layar utama (ditulis oleh PlaybackService)
+    var widgetTitle: String
+        get() = sp.getString("w_title", "") ?: ""
+        set(v) { sp.edit().putString("w_title", v).apply() }
+    var widgetArtist: String
+        get() = sp.getString("w_artist", "") ?: ""
+        set(v) { sp.edit().putString("w_artist", v).apply() }
+    var widgetUri: String
+        get() = sp.getString("w_uri", "") ?: ""
+        set(v) { sp.edit().putString("w_uri", v).apply() }
+    var widgetPlaying: Boolean
+        get() = sp.getBoolean("w_playing", false)
+        set(v) { sp.edit().putBoolean("w_playing", v).apply() }
+
     fun loadList(key: String): List<String> = try {
         val a = JSONArray(sp.getString(key, "[]") ?: "[]")
         List(a.length()) { a.getString(it) }
@@ -61,6 +79,7 @@ class Store(ctx: Context) {
                 albumId = 0,
                 durationMs = o.optLong("dur", 0),
                 dateAdded = o.optLong("added", 0),
+                folder = "File manual",
             )
         }
     } catch (_: Exception) {

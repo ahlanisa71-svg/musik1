@@ -7,6 +7,14 @@ import android.content.Intent
 import android.content.IntentFilter
 import androidx.core.content.ContextCompat
 import com.glassplayer.app.data.Store
+import com.glassplayer.app.widget.WidgetUpdater
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -34,6 +42,25 @@ class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
     private val handler = Handler(Looper.getMainLooper())
     private val sleepRunnable = Runnable { session?.player?.pause() }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val widgetRunnable = Runnable {
+        val p = session?.player ?: return@Runnable
+        val st = Store(this)
+        val md = p.mediaMetadata
+        st.widgetTitle = md.title?.toString() ?: ""
+        st.widgetArtist = md.artist?.toString() ?: ""
+        st.widgetUri = p.currentMediaItem?.mediaId ?: ""
+        st.widgetPlaying = p.isPlaying
+        scope.launch { WidgetUpdater.refresh(applicationContext) }
+    }
+    private fun scheduleWidget() {
+        handler.removeCallbacks(widgetRunnable)
+        handler.postDelayed(widgetRunnable, 300)
+    }
+    private val widgetListener = object : Player.Listener {
+        override fun onIsPlayingChanged(isPlaying: Boolean) = scheduleWidget()
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = scheduleWidget()
+    }
 
     private val callback = object : MediaSession.Callback {
         override fun onConnect(
@@ -112,6 +139,7 @@ class PlaybackService : MediaSessionService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
+        player.addListener(widgetListener)
         session = MediaSession.Builder(this, player)
             .setCallback(callback)
             .setSessionActivity(openApp)
@@ -128,6 +156,8 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         handler.removeCallbacks(sleepRunnable)
+        handler.removeCallbacks(widgetRunnable)
+        scope.cancel()
         try { unregisterReceiver(screenOffReceiver) } catch (_: Exception) {}
         session?.run {
             player.release()

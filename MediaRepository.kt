@@ -4,6 +4,7 @@ import android.content.ContentUris
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
 import android.provider.MediaStore.Audio.Media as A
 import android.provider.OpenableColumns
 import kotlinx.coroutines.Dispatchers
@@ -16,9 +17,10 @@ object MediaRepository {
     /** Memindai SEMUA file audio yang diindeks Android (mp3, m4a, flac, wav, ogg, opus, dll). */
     suspend fun scan(ctx: Context): List<Song> = withContext(Dispatchers.IO) {
         val out = ArrayList<Song>()
+        val folderCol = if (Build.VERSION.SDK_INT >= 29) A.RELATIVE_PATH else A.DATA
         val projection = arrayOf(
             A._ID, A.TITLE, A.ARTIST, A.ALBUM, A.ALBUM_ID, A.DURATION, A.DATE_ADDED,
-            A.DISPLAY_NAME, A.IS_RINGTONE, A.IS_NOTIFICATION, A.IS_ALARM,
+            A.DISPLAY_NAME, A.IS_RINGTONE, A.IS_NOTIFICATION, A.IS_ALARM, folderCol,
         )
         try {
             ctx.contentResolver.query(A.EXTERNAL_CONTENT_URI, projection, null, null, null)?.use { c ->
@@ -33,6 +35,7 @@ object MediaRepository {
                 val iRing = c.getColumnIndexOrThrow(A.IS_RINGTONE)
                 val iNotif = c.getColumnIndexOrThrow(A.IS_NOTIFICATION)
                 val iAlarm = c.getColumnIndexOrThrow(A.IS_ALARM)
+                val iFolder = c.getColumnIndexOrThrow(folderCol)
                 while (c.moveToNext()) {
                     if (c.getInt(iRing) == 1 || c.getInt(iNotif) == 1 || c.getInt(iAlarm) == 1) continue
                     val dur = c.getLong(iDur)
@@ -42,6 +45,12 @@ object MediaRepository {
                     val title = c.getString(iTitle)?.takeIf { it.isNotBlank() } ?: name.ifBlank { "Tanpa judul" }
                     val artist = c.getString(iArtist)?.takeIf { it.isNotBlank() && it != "<unknown>" } ?: UNKNOWN_ARTIST
                     val album = c.getString(iAlbum)?.takeIf { it.isNotBlank() && it != "<unknown>" } ?: ""
+                    val rawFolder = c.getString(iFolder).orEmpty()
+                    val folder = if (Build.VERSION.SDK_INT >= 29) {
+                        rawFolder.trimEnd('/').ifBlank { "Penyimpanan" }
+                    } else {
+                        rawFolder.substringBeforeLast('/', "").substringAfterLast('/').ifBlank { "Penyimpanan" }
+                    }
                     out += Song(
                         id = id,
                         uri = ContentUris.withAppendedId(A.EXTERNAL_CONTENT_URI, id).toString(),
@@ -51,6 +60,7 @@ object MediaRepository {
                         albumId = c.getLong(iAlbumId),
                         durationMs = dur,
                         dateAdded = c.getLong(iAdded),
+                        folder = folder,
                     )
                 }
             }
@@ -99,6 +109,7 @@ object MediaRepository {
             albumId = 0,
             durationMs = dur,
             dateAdded = System.currentTimeMillis() / 1000,
+            folder = "File manual",
         )
     }
 }

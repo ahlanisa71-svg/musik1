@@ -14,6 +14,7 @@ data class Song(
     val albumId: Long,
     val durationMs: Long,
     val dateAdded: Long,
+    val folder: String = "",
 )
 
 fun Song.artworkUri(): Uri? =

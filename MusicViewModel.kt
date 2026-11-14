@@ -7,9 +7,9 @@ import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
@@ -21,10 +21,11 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
 import com.glassplayer.app.data.MediaRepository
-import com.glassplayer.app.data.UNKNOWN_ARTIST
 import com.glassplayer.app.data.Song
 import com.glassplayer.app.data.Store
+import com.glassplayer.app.data.UNKNOWN_ARTIST
 import com.glassplayer.app.data.toMediaItem
+import com.glassplayer.app.widget.WidgetUpdater
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -40,6 +41,8 @@ sealed interface DetailKey {
     data object Favorites : DetailKey
     data class Playlist(val name: String) : DetailKey
     data class Album(val name: String) : DetailKey
+    data class Artist(val name: String) : DetailKey
+    data class Folder(val name: String) : DetailKey
 }
 
 class MusicViewModel(app: Application) : AndroidViewModel(app) {
@@ -83,23 +86,48 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     var sleepEndsAt by mutableLongStateOf(0L)
         private set
 
+    // Antrian putar
+    var queueIds by mutableStateOf<List<String>>(emptyList())
+        private set
+    var queueIndex by mutableIntStateOf(0)
+        private set
+
+    // Gaya pemutar (0 Bawaan, 1 Vinyl modern, 2 Vinyl klasik, 3 CD, 4 Kaset)
+    var playerStyle by mutableIntStateOf(store.playerStyle)
+        private set
+
+    // Permintaan dari widget / notifikasi
+    var pendingTab by mutableStateOf<Int?>(null)
+    var pendingDelete by mutableStateOf<List<Song>?>(null)
+        private set
+
     // Cadangan info lagu dari metadata MediaItem (dipakai layar kunci tanpa memindai ulang pustaka).
     private var metaSong by mutableStateOf<Song?>(null)
     var lockScreenEnabled by mutableStateOf(store.lockScreenEnabled)
         private set
 
     val currentSong: Song? get() = currentId?.let { byUri[it] } ?: metaSong
+    val progress: Float
+        get() = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+
+    fun songFor(uri: String): Song? = byUri[uri] ?: metaSong?.takeIf { it.uri == uri }
 
     fun setLockScreen(on: Boolean) {
         lockScreenEnabled = on
         store.lockScreenEnabled = on
     }
-    val progress: Float
-        get() = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+
+    fun setPlayerStyle(i: Int) {
+        playerStyle = i
+        store.playerStyle = i
+    }
 
     private var controller: MediaController? = null
     private var pendingExternal: Uri? = null
+    private var pendingPlayUri: String? = null
+    private var wantShuffleAll = false
     private var loadJob: Job? = null
+    private var loadedOnce = false
 
     init {
         connect()
@@ -125,17 +153,20 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             val c = try { future.get() } catch (_: Exception) { return@addListener }
             controller = c
             c.addListener(object : Player.Listener {
-                override fun onEvents(player: Player, events: Player.Events) = sync(c)
+                override fun onEvents(player: Player, events: Player.Events) =
+                    sync(c, events.contains(Player.EVENT_TIMELINE_CHANGED))
+
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                     mediaItem?.mediaId?.takeIf { it.isNotEmpty() }?.let { markRecent(it) }
                 }
             })
-            sync(c)
+            sync(c, true)
             flushPending()
+            flushActions()
         }, ContextCompat.getMainExecutor(app))
     }
 
-    private fun sync(c: MediaController) {
+    private fun sync(c: MediaController, timelineChanged: Boolean) {
         isPlaying = c.isPlaying
         val item = c.currentMediaItem
         currentId = item?.mediaId?.takeIf { it.isNotEmpty() }
@@ -153,16 +184,17 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
         shuffle = c.shuffleModeEnabled
         repeatMode = c.repeatMode
+        queueIndex = c.currentMediaItemIndex.coerceAtLeast(0)
+        if (timelineChanged) queueIds = List(c.mediaItemCount) { c.getMediaItemAt(it).mediaId }
     }
 
     private fun markRecent(id: String) {
         recents = (listOf(id) + recents.filter { it != id }).take(30)
         store.saveList("recent", recents)
+        viewModelScope.launch { WidgetUpdater.refresh(getApplication()) }
     }
 
     // ---------- Memuat lagu ----------
-    private var loadedOnce = false
-
     /** Pindai hanya jika belum pernah/sedang dipindai (aman dipanggil berkali-kali). */
     fun ensureLoaded() {
         if (!loadedOnce && loadJob?.isActive != true) loadSongs()
@@ -179,6 +211,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             applySort()
             loading = false
             loadedOnce = true
+            flushActions()
         }
     }
 
@@ -227,12 +260,21 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         DetailKey.Favorites -> songsOf(favorites)
         is DetailKey.Playlist -> songsOf(playlists[key.name].orEmpty())
         is DetailKey.Album -> allSongs.filter { it.album == key.name }.sortedBy { it.title.lowercase() }
+        is DetailKey.Artist -> allSongs.filter { it.artist == key.name }.sortedBy { it.title.lowercase() }
+        is DetailKey.Folder -> allSongs.filter { it.folder == key.name }.sortedBy { it.title.lowercase() }
     }
 
     // ---------- Favorit & playlist ----------
     fun toggleFavorite(song: Song) {
         favorites = if (song.uri in favorites) favorites - song.uri else listOf(song.uri) + favorites
         store.saveList("fav", favorites)
+    }
+
+    fun addFavorites(list: List<Song>) {
+        val add = list.map { it.uri }.filter { it !in favorites }
+        favorites = add + favorites
+        store.saveList("fav", favorites)
+        toast("${list.size} lagu ditambahkan ke favorit")
     }
 
     fun createPlaylist(name: String): Boolean {
@@ -251,6 +293,14 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         toast("Ditambahkan ke \"$name\"")
     }
 
+    fun addManyToPlaylist(name: String, list: List<Song>) {
+        val cur = playlists[name] ?: return
+        val add = list.map { it.uri }.filter { it !in cur }.distinct()
+        playlists = playlists + (name to (cur + add))
+        store.savePlaylists(playlists)
+        toast(if (add.isEmpty()) "Sudah ada di \"$name\"" else "${add.size} lagu ditambahkan ke \"$name\"")
+    }
+
     fun removeFromPlaylist(name: String, song: Song) {
         val list = playlists[name] ?: return
         playlists = playlists + (name to list.filter { it != song.uri })
@@ -260,6 +310,48 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     fun deletePlaylist(name: String) {
         playlists = playlists - name
         store.savePlaylists(playlists)
+    }
+
+    // ---------- Hapus file ----------
+    fun requestDelete(list: List<Song>) {
+        if (list.isNotEmpty()) pendingDelete = list
+    }
+
+    fun clearPendingDelete() {
+        pendingDelete = null
+    }
+
+    /** Android 10 ke bawah: hapus langsung. */
+    fun deleteDirect(list: List<Song>) {
+        val cr = getApplication<Application>().contentResolver
+        var failed = false
+        list.forEach {
+            try { cr.delete(Uri.parse(it.uri), null, null) } catch (_: Exception) { failed = true }
+        }
+        if (failed) toast("Sebagian lagu tidak bisa dihapus")
+        onDeleteDone(list)
+    }
+
+    /** Dipanggil setelah file benar-benar terhapus (atau dikeluarkan dari pustaka). */
+    fun onDeleteDone(list: List<Song>) {
+        val gone = list.mapTo(HashSet()) { it.uri }
+        favorites = favorites.filter { it !in gone }
+        store.saveList("fav", favorites)
+        recents = recents.filter { it !in gone }
+        store.saveList("recent", recents)
+        playlists = playlists.mapValues { (_, v) -> v.filter { it !in gone } }
+        store.savePlaylists(playlists)
+        store.saveExtra(store.loadExtra().filter { it.uri !in gone })
+        external.keys.removeAll(gone)
+        allSongs = allSongs.filter { it.uri !in gone }
+        applySort()
+        controller?.let { c ->
+            for (i in c.mediaItemCount - 1 downTo 0) {
+                if (c.getMediaItemAt(i).mediaId in gone) c.removeMediaItem(i)
+            }
+        }
+        toast("${list.size} lagu dihapus")
+        loadSongs()
     }
 
     // ---------- Kontrol pemutar ----------
@@ -277,13 +369,45 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         playList(list, Random.nextInt(list.size), true)
     }
 
-    fun playNext(song: Song) {
+    fun playNext(song: Song) = playNextMany(listOf(song))
+
+    fun playNextMany(list: List<Song>) {
+        if (list.isEmpty()) return
         val c = controller ?: return
         if (c.mediaItemCount == 0) {
-            playList(listOf(song), 0)
+            playList(list, 0)
         } else {
-            c.addMediaItem(c.currentMediaItemIndex + 1, song.toMediaItem())
+            c.addMediaItems(c.currentMediaItemIndex + 1, list.map { it.toMediaItem() })
             toast("Diputar berikutnya")
+        }
+    }
+
+    fun addToQueue(list: List<Song>) {
+        if (list.isEmpty()) return
+        val c = controller ?: return
+        if (c.mediaItemCount == 0) {
+            playList(list, 0)
+        } else {
+            c.addMediaItems(list.map { it.toMediaItem() })
+            toast("Ditambahkan ke antrian")
+        }
+    }
+
+    fun removeCurrentFromQueue() {
+        val c = controller ?: return
+        if (c.mediaItemCount > 0) c.removeMediaItem(c.currentMediaItemIndex)
+    }
+
+    fun removeFromQueueAt(index: Int) {
+        val c = controller ?: return
+        if (index in 0 until c.mediaItemCount) c.removeMediaItem(index)
+    }
+
+    fun jumpTo(index: Int) {
+        val c = controller ?: return
+        if (index in 0 until c.mediaItemCount) {
+            c.seekToDefaultPosition(index)
+            c.play()
         }
     }
 
@@ -312,6 +436,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---------- Permintaan dari luar (file manager / widget) ----------
     /** Buka file audio dari aplikasi lain (file manager, WhatsApp, dll). */
     fun playExternal(uri: Uri) {
         pendingExternal = uri
@@ -327,6 +452,37 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             external[s.uri] = s
             byUri = byUri + (s.uri to s)
             playList(listOf(s), 0)
+        }
+    }
+
+    /** Dari widget: putar lagu ini di dalam pustaka (antrian = seluruh pustaka). */
+    fun playUriInLibrary(uri: String) {
+        pendingPlayUri = uri
+        flushActions()
+    }
+
+    /** Dari widget "Rekomendasi": acak seluruh pustaka. */
+    fun requestShuffleAll() {
+        wantShuffleAll = true
+        flushActions()
+    }
+
+    /** Dari widget "Cari dan putar": buka tab cari. */
+    fun requestSearchTab() {
+        pendingTab = 1
+    }
+
+    private fun flushActions() {
+        if (controller == null) return
+        if (wantShuffleAll && songs.isNotEmpty()) {
+            wantShuffleAll = false
+            shuffleAll(songs)
+        }
+        val u = pendingPlayUri
+        if (u != null && allSongs.isNotEmpty()) {
+            pendingPlayUri = null
+            val idx = songs.indexOfFirst { it.uri == u }
+            if (idx >= 0) playList(songs, idx) else playExternal(Uri.parse(u))
         }
     }
 

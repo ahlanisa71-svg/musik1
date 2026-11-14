@@ -108,7 +108,7 @@ fun SplashScreen() {
             }
             Spacer(Modifier.height(26.dp))
             Text(
-                "GLASS PLAYER",
+                "PLAY MUSIX",
                 color = Color.White,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Light,

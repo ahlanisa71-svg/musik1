@@ -1,6 +1,27 @@
 package com.glassplayer.app.ui
 
 import android.os.Build
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Checkroom
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.RemoveCircleOutline
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Widgets
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import com.glassplayer.app.data.Song
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -63,7 +84,15 @@ fun NowPlayingScreen(
     vm: MusicViewModel,
     onClose: () -> Unit,
     onSleep: () -> Unit,
+    onStyle: () -> Unit,
+    onAddToPlaylist: (Song) -> Unit,
+    onAlbum: (String) -> Unit,
+    onArtist: (String) -> Unit,
+    onWidgets: () -> Unit,
 ) {
+    val ctx = LocalContext.current
+    var menu by remember { mutableStateOf(false) }
+    var queue by remember { mutableStateOf(false) }
     BackHandler(onBack = onClose)
     val song = vm.currentSong
     val fav = song != null && song.uri in vm.favorites
@@ -101,10 +130,32 @@ fun NowPlayingScreen(
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 16.sp,
                 )
-                GlassIconButton(
-                    Icons.Rounded.Bedtime, "Timer tidur", onSleep,
-                    tint = if (vm.sleepEndsAt > 0) Accent else Color.White,
-                )
+                GlassIconButton(Icons.Rounded.Checkroom, "Gaya pemutar", onStyle)
+                Spacer(Modifier.width(8.dp))
+                Box {
+                    GlassIconButton(Icons.Rounded.MoreVert, "Menu lainnya", { menu = true })
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        @Composable
+                        fun Item(text: String, icon: ImageVector, enabled: Boolean = true, onClick: () -> Unit) {
+                            DropdownMenuItem(
+                                text = { Text(text) },
+                                leadingIcon = { Icon(icon, null) },
+                                enabled = enabled,
+                                onClick = { menu = false; onClick() },
+                            )
+                        }
+                        Item("Tambah ke daftar putar", Icons.Rounded.PlaylistAdd, song != null) { song?.let(onAddToPlaylist) }
+                        Item(
+                            if (vm.sleepEndsAt > 0) "Timer tidur (aktif)" else "Timer tidur",
+                            Icons.Rounded.Bedtime,
+                        ) { onSleep() }
+                        Item("Album", Icons.Rounded.Album, song != null && song.album.isNotBlank()) { song?.let { onAlbum(it.album) } }
+                        Item("Artis", Icons.Rounded.Person, song != null) { song?.let { onArtist(it.artist) } }
+                        Item("Berbagi", Icons.Rounded.Share, song != null) { song?.let { shareSongs(ctx, listOf(it)) } }
+                        Item("Hapus dari antrian", Icons.Rounded.RemoveCircleOutline, song != null) { vm.removeCurrentFromQueue() }
+                        Item("Widget Layar utama", Icons.Rounded.Widgets) { onWidgets() }
+                    }
+                }
             }
 
             BoxWithConstraints(
@@ -112,12 +163,7 @@ fun NowPlayingScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 val side = if (maxWidth < maxHeight) maxWidth else maxHeight
-                ArtImage(
-                    song,
-                    Modifier.size(side).shadow(24.dp, RoundedCornerShape(32.dp)),
-                    RoundedCornerShape(32.dp),
-                    iconSize = 72.dp,
-                )
+                PlayerArt(song, vm.playerStyle, vm.isPlaying, side)
             }
 
             // Judul + favorit
@@ -128,6 +174,9 @@ fun NowPlayingScreen(
                 Column(Modifier.weight(1f)) {
                     Text(song?.title ?: "—", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(song?.artist ?: "", color = SubText, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                IconButton(onClick = { queue = true }) {
+                    Icon(Icons.Rounded.QueueMusic, "Antrian", tint = Color.White, modifier = Modifier.size(26.dp))
                 }
                 IconButton(onClick = { song?.let(vm::toggleFavorite) }) {
                     Icon(
@@ -200,5 +249,48 @@ fun NowPlayingScreen(
             Spacer(Modifier.height(8.dp))
         }
     }
+    }
+
+    if (queue) {
+        AlertDialog(
+            onDismissRequest = { queue = false },
+            containerColor = Color(0xFF26241B),
+            title = { Text("Antrian (${vm.queueIds.size})", color = Color.White) },
+            text = {
+                LazyColumn(Modifier.heightIn(max = 380.dp)) {
+                    itemsIndexed(vm.queueIds) { i, uri ->
+                        val q = vm.songFor(uri)
+                        val cur = i == vm.queueIndex
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { vm.jumpTo(i) }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("${i + 1}", color = SubText, fontSize = 12.sp, modifier = Modifier.width(26.dp), textAlign = TextAlign.Center)
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    q?.title ?: "Lagu",
+                                    color = if (cur) Accent else Color.White,
+                                    fontSize = 14.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(q?.artist ?: "", color = SubText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            if (cur) EqualizerBars(vm.isPlaying, modifier = Modifier.padding(horizontal = 6.dp))
+                            Icon(
+                                Icons.Rounded.Close, "Hapus",
+                                tint = Color.White.copy(alpha = 0.7f),
+                                modifier = Modifier.size(34.dp).clip(CircleShape).clickable { vm.removeFromQueueAt(i) }.padding(7.dp),
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { queue = false }) { Text("Tutup", color = Accent) } },
+        )
     }
 }

@@ -79,6 +79,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(i: Intent?) {
-        if (i?.action == Intent.ACTION_VIEW) i.data?.let { vm.playExternal(it) }
+        when (i?.action) {
+            Intent.ACTION_VIEW -> i.data?.let { vm.playExternal(it) }
+            Actions.PLAY_URI -> i.data?.let { vm.playUriInLibrary(it.toString()) }
+            Actions.SHUFFLE_ALL -> vm.requestShuffleAll()
+            Actions.OPEN_SEARCH -> vm.requestSearchTab()
+        }
     }
 }

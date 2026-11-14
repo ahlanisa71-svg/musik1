@@ -1,6 +1,16 @@
 package com.glassplayer.app.ui
 
 import android.graphics.Bitmap
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,8 +36,6 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SkipNext
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -68,8 +76,10 @@ fun rowShape(index: Int, count: Int, headerAbove: Boolean): Shape {
 
 class SongActions(
     val onPlayNext: (Song) -> Unit,
+    val onAddToQueue: (Song) -> Unit,
     val onToggleFav: (Song) -> Unit,
     val onAddToPlaylist: (Song) -> Unit,
+    val onDelete: (Song) -> Unit,
     val onRemoveFromPlaylist: ((Song) -> Unit)? = null,
 )
 
@@ -131,13 +141,75 @@ fun ArtImage(
 }
 
 @Composable
+fun EqualizerBars(playing: Boolean, color: Color = Accent, modifier: Modifier = Modifier) {
+    val t = rememberInfiniteTransition(label = "eq")
+    val a by t.animateFloat(0.2f, 1f, infiniteRepeatable(tween(420, easing = LinearEasing), RepeatMode.Reverse), label = "a")
+    val b by t.animateFloat(0.2f, 1f, infiniteRepeatable(tween(560, easing = LinearEasing), RepeatMode.Reverse), label = "b")
+    val c by t.animateFloat(0.2f, 1f, infiniteRepeatable(tween(340, easing = LinearEasing), RepeatMode.Reverse), label = "c")
+    Row(modifier.height(16.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
+        listOf(a, b, c).forEach { f ->
+            Box(
+                Modifier
+                    .width(3.dp)
+                    .height(if (playing) (16f * f).dp else 4.dp)
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(color)
+            )
+        }
+    }
+}
+
+@Composable
+fun SongMenuDialog(
+    song: Song,
+    favorite: Boolean,
+    actions: SongActions,
+    onDismiss: () -> Unit,
+) {
+    @Composable
+    fun Item(text: String, color: Color = Color.White, onClick: () -> Unit) {
+        Text(
+            text,
+            color = color,
+            fontSize = 16.sp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable { onDismiss(); onClick() }
+                .padding(horizontal = 8.dp, vertical = 13.dp),
+        )
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF26241B),
+        title = {
+            Text(song.title, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 18.sp)
+        },
+        text = {
+            Column {
+                Item("Putar nanti") { actions.onPlayNext(song) }
+                Item("Tambah ke antrian") { actions.onAddToQueue(song) }
+                Item("Tambah ke daftar putar") { actions.onAddToPlaylist(song) }
+                Item(if (favorite) "Hapus dari favorit" else "Tambah ke favorit") { actions.onToggleFav(song) }
+                actions.onRemoveFromPlaylist?.let { rm -> Item("Hapus dari daftar putar ini") { rm(song) } }
+                Item("Hapus", Color(0xFFFF8A80)) { actions.onDelete(song) }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Tutup", color = Accent) } },
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
 fun SongRow(
     song: Song,
     current: Boolean,
+    playing: Boolean,
     favorite: Boolean,
     shape: Shape,
     actions: SongActions,
     modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
@@ -147,7 +219,7 @@ fun SongRow(
             .clip(shape)
             .background(Color.Black.copy(alpha = 0.14f))
             .background(Color.White.copy(alpha = if (current) 0.22f else 0.11f))
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -170,35 +242,17 @@ fun SongRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        if (current) {
+            EqualizerBars(playing, modifier = Modifier.padding(horizontal = 6.dp))
+        }
         if (favorite) {
             Icon(Icons.Rounded.Favorite, null, tint = Accent, modifier = Modifier.size(16.dp))
         }
-        Box {
-            IconButton(onClick = { menu = true }) {
-                Icon(Icons.Rounded.MoreVert, "Menu", tint = Color.White.copy(alpha = 0.8f))
-            }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(
-                    text = { Text("Putar berikutnya") },
-                    onClick = { menu = false; actions.onPlayNext(song) },
-                )
-                DropdownMenuItem(
-                    text = { Text(if (favorite) "Hapus dari favorit" else "Tambah ke favorit") },
-                    onClick = { menu = false; actions.onToggleFav(song) },
-                )
-                DropdownMenuItem(
-                    text = { Text("Tambah ke playlist") },
-                    onClick = { menu = false; actions.onAddToPlaylist(song) },
-                )
-                actions.onRemoveFromPlaylist?.let { remove ->
-                    DropdownMenuItem(
-                        text = { Text("Hapus dari playlist ini") },
-                        onClick = { menu = false; remove(song) },
-                    )
-                }
-            }
+        IconButton(onClick = { menu = true }) {
+            Icon(Icons.Rounded.MoreVert, "Menu", tint = Color.White.copy(alpha = 0.8f))
         }
     }
+    if (menu) SongMenuDialog(song, favorite, actions) { menu = false }
 }
 
 @Composable

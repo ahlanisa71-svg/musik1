@@ -1,4 +1,4 @@
-# Glass Player
+# Musix
 
 Pemutar musik offline untuk Android dengan tampilan kaca (glassmorphism) ala iPhone di atas latar gradasi.
 
