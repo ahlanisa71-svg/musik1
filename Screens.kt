@@ -165,6 +165,79 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
     }
     val pickFiles = { picker.launch(arrayOf("audio/*", "application/ogg")) }
 
+    // ---- Hapus lagu di Android 10 ke bawah (butuh izin per file di Android 10) ----
+    var legacyQueue by remember { mutableStateOf<List<Song>>(emptyList()) }
+    var legacyDone by remember { mutableStateOf<List<Song>>(emptyList()) }
+    var legacyFailed by remember { mutableStateOf(0) }
+    var consent by remember { mutableStateOf<Int?>(null) }
+    val legacyLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
+        consent = if (res.resultCode == Activity.RESULT_OK) 1 else 2
+    }
+
+    fun finishLegacy() {
+        if (legacyDone.isNotEmpty()) vm.onDeleteDone(legacyDone)
+        Toast.makeText(
+            ctx,
+            if (legacyFailed > 0) "$legacyFailed lagu tidak bisa dihapus" else "Lagu dihapus",
+            Toast.LENGTH_SHORT,
+        ).show()
+        legacyQueue = emptyList()
+        legacyDone = emptyList()
+        legacyFailed = 0
+    }
+
+    fun legacyStep() {
+        var q = legacyQueue
+        while (q.isNotEmpty()) {
+            val s = q.first()
+            try {
+                ctx.contentResolver.delete(Uri.parse(s.uri), null, null)
+                legacyDone = legacyDone + s
+                q = q.drop(1)
+            } catch (e: SecurityException) {
+                if (Build.VERSION.SDK_INT >= 29 && e is android.app.RecoverableSecurityException) {
+                    legacyQueue = q
+                    legacyLauncher.launch(
+                        IntentSenderRequest.Builder(e.userAction.actionIntent.intentSender).build()
+                    )
+                    return
+                }
+                legacyFailed++
+                q = q.drop(1)
+            } catch (e: Exception) {
+                legacyFailed++
+                q = q.drop(1)
+            }
+        }
+        legacyQueue = emptyList()
+        finishLegacy()
+    }
+
+    val writePermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        legacyStep()
+    }
+
+    fun startLegacyDelete(list: List<Song>) {
+        legacyQueue = list
+        legacyDone = emptyList()
+        legacyFailed = 0
+        if (Build.VERSION.SDK_INT <= 28 &&
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+        ) {
+            writePermLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        } else {
+            legacyStep()
+        }
+    }
+
+    LaunchedEffect(consent) {
+        when (consent) {
+            1 -> { consent = null; legacyStep() }
+            2 -> { consent = null; legacyFailed++; legacyQueue = legacyQueue.drop(1); legacyStep() }
+            else -> {}
+        }
+    }
+
     val deleteLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
         val list = vm.pendingDelete
         if (res.resultCode == Activity.RESULT_OK && list != null) vm.onDeleteDone(list)
@@ -556,7 +629,7 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
             title = { Text("Hapus ${pd.size} lagu?") },
             text = { Text("File akan dihapus dari perangkat dan tidak bisa dikembalikan.") },
             confirmButton = {
-                TextButton(onClick = { vm.deleteDirect(pd); vm.clearPendingDelete() }) {
+                TextButton(onClick = { vm.clearPendingDelete(); startLegacyDelete(pd) }) {
                     Text("Hapus", color = Color(0xFFFF8A80))
                 }
             },

@@ -463,17 +463,21 @@ fun MusixDialog(
 ) {
     Dialog(
         onDismissRequest = onDismissRequest,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
         val view = LocalView.current
         SideEffect {
             val w = (view.parent as? DialogWindowProvider)?.window
             w?.setWindowAnimations(-1)
             w?.setDimAmount(0f)
+            w?.setLayout(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            )
         }
         var shown by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) { shown = true }
-        val scrim by dlgAnimateFloat(if (shown) 0.55f else 0f, tween(220), label = "scrim")
+        val scrim by dlgAnimateFloat(if (shown) 0.10f else 0f, tween(220), label = "scrim")
         Box(
             Modifier
                 .fillMaxSize()
