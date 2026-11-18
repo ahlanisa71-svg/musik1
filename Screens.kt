@@ -331,6 +331,7 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
     var tab by rememberSaveable { mutableStateOf(0) }
     var detail by remember { mutableStateOf<DetailKey?>(null) }
     var page by remember { mutableStateOf<Page?>(null) }
+    var pageFrom by remember { mutableStateOf<Page?>(null) }
     var showNow by remember { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var selection by remember { mutableStateOf<Sel?>(null) }
@@ -346,7 +347,7 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
 
     LaunchedEffect(vm.pendingTab) {
         vm.pendingTab?.let {
-            tab = it; detail = null; page = null; showNow = false; selection = null
+            tab = it; detail = null; page = null; pageFrom = null; showNow = false; selection = null
             vm.pendingTab = null
         }
     }
@@ -373,7 +374,8 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
     }
 
     BackHandler(enabled = detail == null && page == null && tab != 0) { tab = 0 }
-    BackHandler(enabled = page != null && detail == null) { page = null }
+    val pageBack: () -> Unit = { page = pageFrom; pageFrom = null }
+    BackHandler(enabled = page != null && detail == null) { pageBack() }
     BackHandler(enabled = detail != null) { detail = null }
 
     ModalNavigationDrawer(
@@ -383,9 +385,9 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
             ModalDrawerSheet(drawerContainerColor = Color(0xF01C1B15)) {
                 DrawerContent(
                     songCount = vm.allSongs.size,
-                    onSettings = { detail = null; page = Page.Settings; scope.launch { drawerState.close() } },
-                    onStyle = { detail = null; page = Page.Style; scope.launch { drawerState.close() } },
-                    onWidgets = { detail = null; page = Page.Widgets; scope.launch { drawerState.close() } },
+                    onSettings = { detail = null; pageFrom = null; page = Page.Settings; scope.launch { drawerState.close() } },
+                    onStyle = { detail = null; pageFrom = null; page = Page.Style; scope.launch { drawerState.close() } },
+                    onWidgets = { detail = null; pageFrom = null; page = Page.Widgets; scope.launch { drawerState.close() } },
                     onPrivacy = { showPrivacy = true; scope.launch { drawerState.close() } },
                     onBug = { sendBugReport(ctx); scope.launch { drawerState.close() } },
                     onAbout = { showAbout = true; scope.launch { drawerState.close() } },
@@ -436,20 +438,20 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
                     pg != null -> when (pg) {
                         Page.Settings -> SettingsPage(
                             vm = vm,
-                            onBack = { page = null },
+                            onBack = { pageBack() },
                             onToggleLock = toggleLock,
                             onSleep = { showSleep = true },
                             onRescan = { vm.loadSongs() },
                             onPick = { pickFiles() },
-                            onPage = { page = it },
+                            onPage = { pageFrom = Page.Settings; page = it },
                         )
-                        Page.Style -> PlayerStylePage(vm) { page = null }
-                        Page.Widgets -> WidgetsPage(vm) { page = null }
-                        Page.Equalizer -> EqualizerPage { page = null }
-                        Page.Theme -> ThemePage { page = null }
+                        Page.Style -> PlayerStylePage(vm) { pageBack() }
+                        Page.Widgets -> WidgetsPage(vm) { pageBack() }
+                        Page.Equalizer -> EqualizerPage { pageBack() }
+                        Page.Theme -> ThemePage { pageBack() }
                         Page.Playlists -> PlaylistsPage(
                             vm = vm,
-                            onBack = { page = null },
+                            onBack = { pageBack() },
                             onOpen = { detail = DetailKey.Playlist(it) },
                             onNew = { afterCreate = null; showNewPlaylist = true },
                         )
@@ -460,7 +462,7 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
                         onOpenDrawer = { scope.launch { drawerState.open() } },
                         onSearch = { tab = 1 },
                         onDetail = { detail = it },
-                        onPlaylists = { page = Page.Playlists },
+                        onPlaylists = { pageFrom = null; page = Page.Playlists },
                         onNewPlaylist = { afterCreate = null; showNewPlaylist = true },
                         onPickFiles = { pickFiles() },
                         onSelect = onSelect,
@@ -491,7 +493,7 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
             ) {
                 MiniPlayer(vm) { showNow = true }
                 if (vm.currentSong != null) Spacer(Modifier.height(10.dp))
-                BottomBar(selected = tab) { tab = it; detail = null; page = null }
+                BottomBar(selected = tab) { tab = it; detail = null; page = null; pageFrom = null }
             }
 
             selection?.let { s ->
@@ -520,12 +522,12 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
                     vm,
                     onClose = { showNow = false },
                     onSleep = { showSleep = true },
-                    onStyle = { showNow = false; detail = null; page = Page.Style },
+                    onStyle = { showNow = false; detail = null; pageFrom = null; page = Page.Style },
                     onAddToPlaylist = { addTargets = listOf(it) },
                     onAlbum = { showNow = false; page = null; detail = DetailKey.Album(it) },
                     onArtist = { showNow = false; page = null; detail = DetailKey.Artist(it) },
-                    onWidgets = { showNow = false; detail = null; page = Page.Widgets },
-                    onEqualizer = { showNow = false; detail = null; page = Page.Equalizer },
+                    onWidgets = { showNow = false; detail = null; pageFrom = null; page = Page.Widgets },
+                    onEqualizer = { showNow = false; detail = null; pageFrom = null; page = Page.Equalizer },
                     onDetails = { detailSong = it },
                 )
             }
