@@ -31,7 +31,10 @@ object WidgetUpdater {
         val recentIds = idsOf(RecentWidget::class.java)
         val recommendIds = idsOf(RecommendWidget::class.java)
         val capsuleIds = idsOf(CapsuleWidget::class.java)
-        if (playerIds.isEmpty() && recentIds.isEmpty() && recommendIds.isEmpty() && capsuleIds.isEmpty()) {
+        val discWideIds = idsOf(DiscWideWidget::class.java)
+        if (playerIds.isEmpty() && recentIds.isEmpty() && recommendIds.isEmpty() &&
+            capsuleIds.isEmpty() && discWideIds.isEmpty()
+        ) {
             return@withContext
         }
 
@@ -66,12 +69,14 @@ object WidgetUpdater {
 
         if (recommendIds.isNotEmpty()) {
             val rv = RemoteViews(app.packageName, R.layout.widget_recommend)
-            val first = recentUris.firstOrNull()
-            val bmp = if (first != null) cover(app, first, 260) else cover
-            if (bmp != null) rv.setImageViewBitmap(R.id.w_cover, bmp)
-            else rv.setImageViewResource(R.id.w_cover, R.drawable.ic_w_music)
-            rv.setOnClickPendingIntent(R.id.w_root, openApp(app, Actions.SHUFFLE_ALL, null, 30))
+            bindPlayer(app, rv, st, cover)
             mgr.updateAppWidget(recommendIds, rv)
+        }
+
+        if (discWideIds.isNotEmpty()) {
+            val rv = RemoteViews(app.packageName, R.layout.widget_disc_wide)
+            bindPlayer(app, rv, st, cover)
+            mgr.updateAppWidget(discWideIds, rv)
         }
 
         if (capsuleIds.isNotEmpty()) {
@@ -90,7 +95,12 @@ object WidgetUpdater {
         rv.setImageViewResource(R.id.w_play, if (st.widgetPlaying) R.drawable.ic_w_pause else R.drawable.ic_w_play)
 
         rv.setOnClickPendingIntent(R.id.w_prev, mediaKey(app, KeyEvent.KEYCODE_MEDIA_PREVIOUS))
-        rv.setOnClickPendingIntent(R.id.w_play, mediaKey(app, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
+        // Belum ada lagu yang pernah diputar: tombol putar membuka aplikasi dan memutar acak.
+        rv.setOnClickPendingIntent(
+            R.id.w_play,
+            if (st.widgetTitle.isBlank()) openApp(app, Actions.SHUFFLE_ALL, null, 31)
+            else mediaKey(app, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE),
+        )
         rv.setOnClickPendingIntent(R.id.w_next, mediaKey(app, KeyEvent.KEYCODE_MEDIA_NEXT))
         rv.setOnClickPendingIntent(R.id.w_root, openApp(app, null, null, 10))
     }

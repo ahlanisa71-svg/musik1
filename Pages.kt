@@ -75,6 +75,7 @@ import com.glassplayer.app.MusicViewModel
 import com.glassplayer.app.R
 import com.glassplayer.app.data.Song
 import com.glassplayer.app.widget.CapsuleWidget
+import com.glassplayer.app.widget.DiscWideWidget
 import com.glassplayer.app.widget.PlayerSearchWidget
 import com.glassplayer.app.widget.RecentWidget
 import com.glassplayer.app.widget.RecommendWidget
@@ -90,7 +91,7 @@ sealed interface Page {
 }
 
 const val APP_NAME = "Musix"
-const val APP_VERSION = "1.3"
+const val APP_VERSION = "1.4"
 const val CONTACT_EMAIL = "rifqihisyammuddin429@gmail.com"
 const val IG_URL = "https://www.instagram.com/rifsy_am"
 const val IG_NAME = "rifsy_am"
@@ -392,6 +393,22 @@ private fun MiniCover(song: Song?, modifier: Modifier, shape: Shape = RoundedCor
 }
 
 @Composable
+private fun DiscPreview(song: Song?, size: androidx.compose.ui.unit.Dp) {
+    Box(Modifier.size(size).clip(CircleShape).background(Color(0xFF0E0E10)), contentAlignment = Alignment.Center) {
+        MiniCover(song, Modifier.size(size * 0.48f), CircleShape)
+    }
+}
+
+@Composable
+private fun DiscControls() {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        Icon(androidx.compose.material.icons.Icons.Rounded.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(24.dp))
+        Icon(androidx.compose.material.icons.Icons.Rounded.PlayArrow, null, tint = Color.White, modifier = Modifier.size(30.dp))
+        Icon(androidx.compose.material.icons.Icons.Rounded.SkipNext, null, tint = Color.White, modifier = Modifier.size(24.dp))
+    }
+}
+
+@Composable
 fun WidgetsPage(vm: MusicViewModel, onBack: () -> Unit) {
     val ctx = LocalContext.current
     val s = vm.currentSong ?: vm.songs.firstOrNull()
@@ -452,22 +469,38 @@ fun WidgetsPage(vm: MusicViewModel, onBack: () -> Unit) {
                 }
             }
 
-            WidgetCard(2, "Rekomendasi", "Kartu persegi, ketuk untuk putar acak", { pinWidget(ctx, RecommendWidget::class.java) }) {
-                Box(Modifier.size(120.dp).clip(RoundedCornerShape(22.dp)).background(WidgetBrush)) {
-                    MiniCover(s, Modifier.fillMaxSize(), RoundedCornerShape(0.dp))
-                    Box(
-                        Modifier.fillMaxSize().background(
-                            Brush.verticalGradient(listOf(Color(0x10000000), Color(0xAA000000)))
-                        )
-                    )
-                    Column(Modifier.align(Alignment.BottomStart).padding(10.dp)) {
-                        Text("Rekomendasi", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Text("Putar acak untukmu", color = SubText, fontSize = 10.sp)
+            WidgetCard(2, "Piringan persegi", "Kartu kaca dengan tombol putar, jeda, berikutnya", { pinWidget(ctx, RecommendWidget::class.java) }) {
+                Column(
+                    Modifier.size(width = 170.dp, height = 190.dp).clip(RoundedCornerShape(26.dp))
+                        .background(WidgetBrush).padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    DiscPreview(s, 92.dp)
+                    Spacer(Modifier.height(6.dp))
+                    Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(artist, color = SubText, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(6.dp))
+                    DiscControls()
+                }
+            }
+
+            WidgetCard(3, "Piringan persegi panjang", "Piringan di kiri, tombol putar di kanan", { pinWidget(ctx, DiscWideWidget::class.java) }) {
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(WidgetBrush).padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    DiscPreview(s, 82.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(artist, color = SubText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(6.dp))
+                        DiscControls()
                     }
                 }
             }
 
-            WidgetCard(3, "Kapsul", "Kontrol cepat putar/jeda", { pinWidget(ctx, CapsuleWidget::class.java) }) {
+            WidgetCard(4, "Kapsul", "Kontrol cepat putar/jeda", { pinWidget(ctx, CapsuleWidget::class.java) }) {
                 Row(
                     Modifier
                         .fillMaxWidth()

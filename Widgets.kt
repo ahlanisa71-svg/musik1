@@ -30,8 +30,11 @@ class PlayerSearchWidget : BaseWidget()
 /** Lagu terbaru: pemutar mini + 4 cover lagu terakhir diputar. */
 class RecentWidget : BaseWidget()
 
-/** Rekomendasi: kartu persegi, ketuk untuk memutar acak. */
+/** Piringan persegi: kartu kaca dengan piringan hitam + tombol putar. */
 class RecommendWidget : BaseWidget()
+
+/** Piringan persegi panjang: piringan di kiri, judul dan tombol putar di kanan. */
+class DiscWideWidget : BaseWidget()
 
 /** Widget pemutar kapsul: kontrol cepat putar/jeda. */
 class CapsuleWidget : BaseWidget()

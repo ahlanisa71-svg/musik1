@@ -2,6 +2,7 @@
     <string name="app_name">Musix</string>
     <string name="wd_player_search">Cari dan putar</string>
     <string name="wd_recent">Lagu terbaru</string>
-    <string name="wd_recommend">Rekomendasi</string>
+    <string name="wd_recommend">Piringan persegi</string>
+    <string name="wd_disc_wide">Piringan persegi panjang</string>
     <string name="wd_capsule">Kapsul</string>
 </resources>
