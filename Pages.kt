@@ -91,7 +91,7 @@ sealed interface Page {
 }
 
 const val APP_NAME = "Musix"
-const val APP_VERSION = "1.6"
+const val APP_VERSION = "1.7"
 const val CONTACT_EMAIL = "rifqihisyammuddin429@gmail.com"
 const val IG_URL = "https://www.instagram.com/rifsy_am"
 const val IG_NAME = "rifsy_am"
