@@ -91,7 +91,7 @@ sealed interface Page {
 }
 
 const val APP_NAME = "Musix"
-const val APP_VERSION = "1.4"
+const val APP_VERSION = "1.6"
 const val CONTACT_EMAIL = "rifqihisyammuddin429@gmail.com"
 const val IG_URL = "https://www.instagram.com/rifsy_am"
 const val IG_NAME = "rifsy_am"
@@ -232,6 +232,7 @@ fun SettingsPage(
     val ctx = LocalContext.current
     var showCf by remember { mutableStateOf(false) }
     var showSpeed by remember { mutableStateOf(false) }
+    var showUpdate by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
         PageHeader("Setelan", onBack)
@@ -272,6 +273,8 @@ fun SettingsPage(
                     "Versi aplikasi", "$APP_NAME $APP_VERSION", Icons.Rounded.Info, onClick = {},
                     trailing = { Text("v$APP_VERSION", color = SubText, fontSize = 14.sp) },
                 )
+                RowDivider()
+                SettingRow("Pembaruan aplikasi", "Periksa dan pasang versi terbaru", Icons.Rounded.SystemUpdate, onClick = { showUpdate = true })
             }
 
             Spacer(Modifier.height(28.dp))
@@ -291,6 +294,7 @@ fun SettingsPage(
 
     if (showSpeed) SpeedDialog(vm.playbackSpeed, { vm.setSpeed(it) }) { showSpeed = false }
     if (showCf) CrossfadeDialog(vm.crossfadeSec, { vm.setCrossfade(it) }) { showCf = false }
+    if (showUpdate) UpdateDialog(APP_VERSION) { showUpdate = false }
 }
 
 // ---------------------------------------------------------------------

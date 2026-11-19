@@ -12,14 +12,28 @@ android {
         applicationId = "com.glassplayer.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.4"
+        versionCode = 6
+        versionName = "1.6"
+        val repo = System.getenv("GITHUB_REPOSITORY") ?: "ahlanisa71-svg/Musik"
+        buildConfigField("String", "UPDATE_REPO", "\"$repo\"")
+    }
+
+    signingConfigs {
+        create("musix") {
+            storeFile = file("musix.keystore")
+            storePassword = "musix123"
+            keyAlias = "musix"
+            keyPassword = "musix123"
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("musix")
+        }
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("musix")
         }
     }
 
@@ -35,6 +49,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

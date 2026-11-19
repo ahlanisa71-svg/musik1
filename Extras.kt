@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.glassplayer.app.data.AudioFx
 import com.glassplayer.app.data.Song
+import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
 
@@ -376,6 +377,132 @@ fun EditSongDialog(song: Song, onDismiss: () -> Unit, onSave: (EditReq) -> Unit)
                 if (title.isNotBlank()) onSave(EditReq(song, title.trim(), artist.trim(), album.trim()))
                 onDismiss()
             }) { Text("Simpan", color = Accent) }
+        },
+    )
+}
+
+// ---------------------------------------------------------------------
+//  Pembaruan aplikasi (manual, lewat GitHub Releases)
+// ---------------------------------------------------------------------
+
+private sealed interface UpState {
+    data object Checking : UpState
+    data object Latest : UpState
+    data class Found(val info: com.glassplayer.app.data.UpdateInfo) : UpState
+    data class Downloading(val info: com.glassplayer.app.data.UpdateInfo, val percent: Int) : UpState
+    data class Ready(val info: com.glassplayer.app.data.UpdateInfo, val file: java.io.File) : UpState
+    data class Error(val reason: String) : UpState
+}
+
+private fun fmtSize(b: Long): String =
+    if (b <= 0) "" else "%.1f MB".format(b / 1048576.0)
+
+@Composable
+fun UpdateDialog(currentVersion: String, onDismiss: () -> Unit) {
+    val ctx = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var st by remember { mutableStateOf<UpState>(UpState.Checking) }
+    var nonce by remember { mutableStateOf(0) }
+
+    androidx.compose.runtime.LaunchedEffect(nonce) {
+        st = UpState.Checking
+        st = when (val r = com.glassplayer.app.data.Updater.check(ctx)) {
+            is com.glassplayer.app.data.UpdateCheck.Available -> UpState.Found(r.info)
+            com.glassplayer.app.data.UpdateCheck.UpToDate -> UpState.Latest
+            is com.glassplayer.app.data.UpdateCheck.Failed -> UpState.Error(r.reason)
+        }
+    }
+
+    fun startDownload(info: com.glassplayer.app.data.UpdateInfo) {
+        scope.launch {
+            st = UpState.Downloading(info, -1)
+            try {
+                val f = com.glassplayer.app.data.Updater.download(ctx, info) { p ->
+                    st = UpState.Downloading(info, p)
+                }
+                st = UpState.Ready(info, f)
+                com.glassplayer.app.data.Updater.install(ctx, f)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                st = UpState.Error("Unduhan gagal. Periksa koneksi internet lalu coba lagi.")
+            }
+        }
+    }
+
+    val s = st
+    MusixDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Pembaruan aplikasi") },
+        text = {
+            Column {
+                when (s) {
+                    UpState.Checking -> {
+                        Text("Memeriksa versi terbaru…", color = SubText, fontSize = 14.sp)
+                        Spacer(Modifier.height(14.dp))
+                        androidx.compose.material3.LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth(), color = Accent, trackColor = Color.White.copy(alpha = 0.15f),
+                        )
+                    }
+                    UpState.Latest -> {
+                        Text("Sudah versi terbaru", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Spacer(Modifier.height(4.dp))
+                        Text("Versi $currentVersion adalah yang paling baru.", color = SubText, fontSize = 14.sp)
+                    }
+                    is UpState.Found -> {
+                        Text("Versi ${s.info.versionName} tersedia", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Versi sekarang $currentVersion" + fmtSize(s.info.sizeBytes).let { if (it.isEmpty()) "" else " · unduhan $it" },
+                            color = SubText, fontSize = 13.sp,
+                        )
+                        if (s.info.notes.isNotBlank()) {
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                s.info.notes, color = Color.White, fontSize = 13.sp,
+                                maxLines = 8, overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    is UpState.Downloading -> {
+                        Text("Mengunduh versi ${s.info.versionName}…", color = Color.White, fontSize = 14.sp)
+                        Spacer(Modifier.height(14.dp))
+                        if (s.percent >= 0) {
+                            androidx.compose.material3.LinearProgressIndicator(
+                                progress = { s.percent / 100f },
+                                modifier = Modifier.fillMaxWidth(), color = Accent, trackColor = Color.White.copy(alpha = 0.15f),
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text("${s.percent}%", color = SubText, fontSize = 12.sp)
+                        } else {
+                            androidx.compose.material3.LinearProgressIndicator(
+                                modifier = Modifier.fillMaxWidth(), color = Accent, trackColor = Color.White.copy(alpha = 0.15f),
+                            )
+                        }
+                    }
+                    is UpState.Ready -> {
+                        Text("Unduhan selesai", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Ketuk Pasang. Jika Android meminta izin \"pasang aplikasi dari sumber ini\", aktifkan, lalu kembali ke sini dan ketuk Pasang lagi. Data dan pengaturan Anda tetap aman.",
+                            color = SubText, fontSize = 13.sp,
+                        )
+                    }
+                    is UpState.Error -> Text(s.reason, color = SubText, fontSize = 14.sp)
+                }
+            }
+        },
+        dismissButton = {
+            if (s !is UpState.Downloading) TextButton(onClick = onDismiss) { Text("Tutup", color = SubText) }
+        },
+        confirmButton = {
+            when (s) {
+                is UpState.Found -> TextButton(onClick = { startDownload(s.info) }) { Text("Unduh", color = Accent) }
+                is UpState.Ready -> TextButton(onClick = { com.glassplayer.app.data.Updater.install(ctx, s.file) }) { Text("Pasang", color = Accent) }
+                is UpState.Error -> TextButton(onClick = { nonce++ }) { Text("Coba lagi", color = Accent) }
+                UpState.Latest -> TextButton(onClick = { nonce++ }) { Text("Periksa lagi", color = Accent) }
+                else -> {}
+            }
         },
     )
 }

@@ -620,6 +620,31 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
     if (showPrivacy) PrivacyDialog { showPrivacy = false }
     if (showAbout) AboutDialog { showAbout = false }
 
+    // Pemeriksaan pembaruan otomatis sekali saat aplikasi dibuka (hanya memberi tahu; memasang tetap manual).
+    var autoUpdate by remember { mutableStateOf<com.glassplayer.app.data.UpdateInfo?>(null) }
+    var showUpdateDlg by remember { mutableStateOf(false) }
+    LaunchedEffect(revealed) {
+        if (revealed) {
+            kotlinx.coroutines.delay(2500)
+            if (com.glassplayer.app.data.Updater.shouldAutoCheck(ctx)) {
+                val r = com.glassplayer.app.data.Updater.check(ctx)
+                if (r is com.glassplayer.app.data.UpdateCheck.Available) autoUpdate = r.info
+            }
+        }
+    }
+    autoUpdate?.let { u ->
+        MusixDialog(
+            onDismissRequest = { autoUpdate = null },
+            title = { Text("Pembaruan tersedia") },
+            text = { Text("Musix ${u.versionName} sudah tersedia. Perbarui sekarang untuk fitur dan perbaikan terbaru.", color = SubText) },
+            dismissButton = { TextButton(onClick = { autoUpdate = null }) { Text("Nanti", color = SubText) } },
+            confirmButton = {
+                TextButton(onClick = { autoUpdate = null; showUpdateDlg = true }) { Text("Perbarui", color = Accent) }
+            },
+        )
+    }
+    if (showUpdateDlg) UpdateDialog(APP_VERSION) { showUpdateDlg = false }
+
     // Android 10 ke bawah: konfirmasi sendiri sebelum hapus (Android 11+ memakai dialog sistem)
     val pd = vm.pendingDelete
     if (pd != null && Build.VERSION.SDK_INT < 30) {
