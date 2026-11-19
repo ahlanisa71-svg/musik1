@@ -218,11 +218,14 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         if (!loadedOnce && loadJob?.isActive != true) loadSongs()
     }
 
+    /** Lagu yang baru dihapus: disembunyikan dari hasil pindai walau indeks Android belum diperbarui. */
+    private val deletedUris = HashSet<String>()
+
     fun loadSongs() {
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             loading = true
-            val scanned = MediaRepository.scan(getApplication())
+            val scanned = MediaRepository.scan(getApplication()).filter { it.uri !in deletedUris }
             val known = scanned.mapTo(HashSet()) { it.uri }
             val extra = store.loadExtra().filter { it.uri !in known }
             allSongs = scanned + extra
@@ -331,8 +334,22 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---------- Hapus file ----------
+    /** Lokasi file asli, dicatat sebelum dihapus supaya bisa dipastikan benar-benar hilang. */
+    private val pathOf = HashMap<String, String>()
+
     fun requestDelete(list: List<Song>) {
-        if (list.isNotEmpty()) pendingDelete = list
+        if (list.isEmpty()) return
+        val cr = getApplication<Application>().contentResolver
+        list.forEach { s ->
+            try {
+                @Suppress("DEPRECATION")
+                cr.query(Uri.parse(s.uri), arrayOf(android.provider.MediaStore.MediaColumns.DATA), null, null, null)?.use {
+                    if (it.moveToFirst()) it.getString(0)?.let { p -> pathOf[s.uri] = p }
+                }
+            } catch (_: Exception) {
+            }
+        }
+        pendingDelete = list
     }
 
     fun clearPendingDelete() {
@@ -353,6 +370,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     /** Dipanggil setelah file benar-benar terhapus (atau dikeluarkan dari pustaka). */
     fun onDeleteDone(list: List<Song>) {
         val gone = list.mapTo(HashSet()) { it.uri }
+        deletedUris.addAll(gone)
         favorites = favorites.filter { it !in gone }
         store.saveList("fav", favorites)
         recents = recents.filter { it !in gone }
@@ -368,8 +386,29 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 if (c.getMediaItemAt(i).mediaId in gone) c.removeMediaItem(i)
             }
         }
+        // Pastikan file asli benar-benar hilang dari penyimpanan (bukan hanya dari indeks).
+        val paths = gone.mapNotNull { pathOf.remove(it) }
+        viewModelScope.launch {
+            val left = withContext(Dispatchers.IO) {
+                var n = 0
+                paths.forEach { p ->
+                    val f = java.io.File(p)
+                    if (f.exists() && !f.delete()) n++
+                }
+                if (paths.isNotEmpty()) {
+                    android.media.MediaScannerConnection.scanFile(getApplication(), paths.toTypedArray(), null, null)
+                }
+                n
+            }
+            if (left > 0) toast("$left file belum terhapus dari penyimpanan, hapus lewat pengelola file")
+        }
         toast("${list.size} lagu dihapus")
         loadSongs()
+        // Indeks Android kadang telat memperbarui diri; pindai sekali lagi setelah jeda singkat.
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(2500)
+            loadSongs()
+        }
     }
 
     // ---------- Kontrol pemutar ----------
