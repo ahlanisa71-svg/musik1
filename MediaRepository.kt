@@ -14,13 +14,22 @@ const val UNKNOWN_ARTIST = "Artis tidak dikenal"
 
 object MediaRepository {
 
+    private fun canOpen(ctx: Context, uri: Uri): Boolean = try {
+        ctx.contentResolver.openFileDescriptor(uri, "r")?.close()
+        true
+    } catch (_: java.io.FileNotFoundException) {
+        false
+    } catch (_: Exception) {
+        true
+    }
+
     /** Memindai SEMUA file audio yang diindeks Android (mp3, m4a, flac, wav, ogg, opus, dll). */
     suspend fun scan(ctx: Context): List<Song> = withContext(Dispatchers.IO) {
         val out = ArrayList<Song>()
         val folderCol = if (Build.VERSION.SDK_INT >= 29) A.RELATIVE_PATH else A.DATA
         val projection = arrayOf(
             A._ID, A.TITLE, A.ARTIST, A.ALBUM, A.ALBUM_ID, A.DURATION, A.DATE_ADDED,
-            A.DISPLAY_NAME, A.IS_RINGTONE, A.IS_NOTIFICATION, A.IS_ALARM, folderCol,
+            A.DISPLAY_NAME, A.IS_RINGTONE, A.IS_NOTIFICATION, A.IS_ALARM, folderCol, A.DATA,
         )
         try {
             ctx.contentResolver.query(A.EXTERNAL_CONTENT_URI, projection, null, null, null)?.use { c ->
@@ -36,11 +45,16 @@ object MediaRepository {
                 val iNotif = c.getColumnIndexOrThrow(A.IS_NOTIFICATION)
                 val iAlarm = c.getColumnIndexOrThrow(A.IS_ALARM)
                 val iFolder = c.getColumnIndexOrThrow(folderCol)
+                val iData = c.getColumnIndexOrThrow(A.DATA)
                 while (c.moveToNext()) {
                     if (c.getInt(iRing) == 1 || c.getInt(iNotif) == 1 || c.getInt(iAlarm) == 1) continue
                     val dur = c.getLong(iDur)
                     if (dur in 1..4999) continue
                     val id = c.getLong(iId)
+                    // Lewati entri "hantu": tercatat di indeks Android tetapi filenya sudah tidak ada / tidak bisa dibuka.
+                    if (!canOpen(ctx, ContentUris.withAppendedId(A.EXTERNAL_CONTENT_URI, id))) continue
+                    // Lewati entri "hantu": ada di indeks Android tapi filenya sudah tidak ada / kosong.
+                    if (!playable(ctx, id, c.getString(iData).orEmpty())) continue
                     val name = c.getString(iName).orEmpty().substringBeforeLast('.')
                     val title = c.getString(iTitle)?.takeIf { it.isNotBlank() } ?: name.ifBlank { "Tanpa judul" }
                     val artist = c.getString(iArtist)?.takeIf { it.isNotBlank() && it != "<unknown>" } ?: UNKNOWN_ARTIST
@@ -68,6 +82,19 @@ object MediaRepository {
         } catch (_: Exception) {
         }
         out
+    }
+
+    private fun playable(ctx: Context, id: Long, path: String): Boolean {
+        if (path.isNotEmpty()) {
+            val f = java.io.File(path)
+            if (f.exists() && f.length() > 0) return true
+        }
+        return try {
+            ctx.contentResolver.openAssetFileDescriptor(ContentUris.withAppendedId(A.EXTERNAL_CONTENT_URI, id), "r")
+                ?.use { it.length != 0L } ?: false
+        } catch (_: Exception) {
+            false
+        }
     }
 
     /** Membaca satu file (dari pemilih file atau dibuka dari file manager). */

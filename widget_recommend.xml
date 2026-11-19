@@ -8,49 +8,20 @@
     android:orientation="vertical"
     android:padding="12dp">
 
-    <FrameLayout
-        android:layout_width="108dp"
-        android:layout_height="92dp">
-
-        <ImageView
-            android:layout_width="92dp"
-            android:layout_height="92dp"
-            android:contentDescription="@null"
-            android:src="@drawable/widget_vinyl" />
-
-        <ImageView
-            android:id="@+id/w_cover"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:layout_marginStart="24dp"
-            android:layout_marginTop="24dp"
-            android:background="@drawable/widget_cover_circle"
-            android:clipToOutline="true"
-            android:contentDescription="@null"
-            android:scaleType="centerCrop"
-            android:src="@drawable/ic_w_music" />
-
-        <ImageView
-            android:layout_width="8dp"
-            android:layout_height="8dp"
-            android:layout_marginStart="42dp"
-            android:layout_marginTop="42dp"
-            android:contentDescription="@null"
-            android:src="@drawable/widget_hole" />
-
-        <ImageView
-            android:layout_width="34dp"
-            android:layout_height="48dp"
-            android:layout_gravity="top|end"
-            android:contentDescription="@null"
-            android:src="@drawable/ic_w_arm" />
-    </FrameLayout>
+    <ImageView
+        android:id="@+id/w_disc"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:contentDescription="@null"
+        android:scaleType="fitCenter"
+        android:src="@drawable/widget_vinyl" />
 
     <TextView
         android:id="@+id/w_title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
+        android:layout_marginTop="4dp"
         android:ellipsize="end"
         android:gravity="center"
         android:singleLine="true"
@@ -79,7 +50,7 @@
 
         <ImageButton
             android:id="@+id/w_prev"
-            android:layout_width="40dp"
+            android:layout_width="44dp"
             android:layout_height="36dp"
             android:background="@android:color/transparent"
             android:contentDescription="Sebelumnya"
@@ -87,7 +58,7 @@
 
         <ImageButton
             android:id="@+id/w_play"
-            android:layout_width="48dp"
+            android:layout_width="52dp"
             android:layout_height="36dp"
             android:background="@android:color/transparent"
             android:contentDescription="Putar/Jeda"
@@ -95,7 +66,7 @@
 
         <ImageButton
             android:id="@+id/w_next"
-            android:layout_width="40dp"
+            android:layout_width="44dp"
             android:layout_height="36dp"
             android:background="@android:color/transparent"
             android:contentDescription="Berikutnya"

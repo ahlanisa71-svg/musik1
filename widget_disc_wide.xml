@@ -8,44 +8,14 @@
     android:orientation="horizontal"
     android:padding="12dp">
 
-    <FrameLayout
-        android:layout_width="96dp"
-        android:layout_height="86dp">
-
-        <ImageView
-            android:layout_width="82dp"
-            android:layout_height="82dp"
-            android:layout_gravity="center_vertical"
-            android:contentDescription="@null"
-            android:src="@drawable/widget_vinyl" />
-
-        <ImageView
-            android:id="@+id/w_cover"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:layout_marginStart="21dp"
-            android:layout_marginTop="23dp"
-            android:background="@drawable/widget_cover_circle"
-            android:clipToOutline="true"
-            android:contentDescription="@null"
-            android:scaleType="centerCrop"
-            android:src="@drawable/ic_w_music" />
-
-        <ImageView
-            android:layout_width="8dp"
-            android:layout_height="8dp"
-            android:layout_marginStart="37dp"
-            android:layout_marginTop="39dp"
-            android:contentDescription="@null"
-            android:src="@drawable/widget_hole" />
-
-        <ImageView
-            android:layout_width="34dp"
-            android:layout_height="48dp"
-            android:layout_gravity="top|end"
-            android:contentDescription="@null"
-            android:src="@drawable/ic_w_arm" />
-    </FrameLayout>
+    <ImageView
+        android:id="@+id/w_disc"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:adjustViewBounds="true"
+        android:contentDescription="@null"
+        android:scaleType="fitCenter"
+        android:src="@drawable/widget_vinyl" />
 
     <LinearLayout
         android:layout_width="0dp"
@@ -78,7 +48,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="4dp"
             android:gravity="center"
             android:orientation="horizontal">
 

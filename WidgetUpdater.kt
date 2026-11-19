@@ -70,12 +70,14 @@ object WidgetUpdater {
         if (recommendIds.isNotEmpty()) {
             val rv = RemoteViews(app.packageName, R.layout.widget_recommend)
             bindPlayer(app, rv, st, cover)
+            rv.setImageViewBitmap(R.id.w_disc, DiscArt.render(cover))
             mgr.updateAppWidget(recommendIds, rv)
         }
 
         if (discWideIds.isNotEmpty()) {
             val rv = RemoteViews(app.packageName, R.layout.widget_disc_wide)
             bindPlayer(app, rv, st, cover)
+            rv.setImageViewBitmap(R.id.w_disc, DiscArt.render(cover))
             mgr.updateAppWidget(discWideIds, rv)
         }
 
