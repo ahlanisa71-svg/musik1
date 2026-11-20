@@ -75,6 +75,7 @@ object MediaRepository {
                         durationMs = dur,
                         dateAdded = c.getLong(iAdded),
                         folder = folder,
+                        path = c.getString(iData).orEmpty(),
                     )
                 }
             }

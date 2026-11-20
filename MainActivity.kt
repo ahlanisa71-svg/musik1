@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
         com.glassplayer.app.ui.AppTheme.index = com.glassplayer.app.data.Store(this).themeIndex
+        com.glassplayer.app.ui.AppTheme.pureBlack = com.glassplayer.app.data.Store(this).pureBlack
         com.glassplayer.app.data.AudioFx.load(this)
         handleIntent(intent)
 

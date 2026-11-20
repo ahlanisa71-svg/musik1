@@ -22,6 +22,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -43,7 +44,9 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.NewReleases
 import androidx.compose.material.icons.rounded.Palette
@@ -71,6 +74,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -329,6 +333,8 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
     }
 
     var tab by rememberSaveable { mutableStateOf(0) }
+    val searchFocus = remember { FocusRequester() }
+    LaunchedEffect(tab) { if (tab == 1) runCatching { searchFocus.requestFocus() } }
     var detail by remember { mutableStateOf<DetailKey?>(null) }
     var page by remember { mutableStateOf<Page?>(null) }
     var pageFrom by remember { mutableStateOf<Page?>(null) }
@@ -468,7 +474,7 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
                         onSelect = onSelect,
                         onSelectMode = { list -> selection = Sel(list, emptySet()) },
                     )
-                    st.tab == 1 -> SearchScreen(vm, actions, query, { query = it }, onSelect)
+                    st.tab == 1 -> SearchScreen(vm, actions, query, { scope.launch { drawerState.open() } }, onSelect)
                     else -> DetailScreen(
                         title = "Favorit",
                         songs = vm.listFor(DetailKey.Favorites),
@@ -489,11 +495,21 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
                 Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
+                    .then(if (tab == 1 && detail == null && page == null) Modifier.imePadding() else Modifier)
                     .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
                 MiniPlayer(vm) { showNow = true }
                 if (vm.currentSong != null) Spacer(Modifier.height(10.dp))
-                BottomBar(selected = tab) { tab = it; detail = null; page = null; pageFrom = null }
+                if (tab == 1 && detail == null && page == null) {
+                    SearchBottomBar(
+                        query = query,
+                        onQuery = { query = it },
+                        focus = searchFocus,
+                        onHome = { tab = 0; detail = null; page = null; pageFrom = null },
+                    )
+                } else {
+                    BottomBar(selected = tab) { tab = it; detail = null; page = null; pageFrom = null }
+                }
             }
 
             selection?.let { s ->
@@ -645,6 +661,42 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
     }
     if (showUpdateDlg) UpdateDialog(APP_VERSION) { showUpdateDlg = false }
 
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) vm.retryLeftovers()
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
+
+    // File tidak bisa dihapus oleh sistem (mis. HP Xiaomi): minta izin "akses semua file"
+    if (vm.needAllFiles) {
+        MusixDialog(
+            onDismissRequest = { vm.needAllFiles = false },
+            containerColor = Color(0xFF26241B),
+            titleContentColor = Color.White,
+            textContentColor = Color.White,
+            title = { Text("Izinkan akses semua file?") },
+            text = {
+                Text("Sistem menolak menghapus file lagu ini dari penyimpanan. Aktifkan \"Akses semua file\" untuk Musix, lalu kembali ke aplikasi: file akan dihapus otomatis. Lagu ini sudah disembunyikan dari daftar.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.needAllFiles = false
+                    try {
+                        ctx.startActivity(
+                            Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:" + ctx.packageName))
+                        )
+                    } catch (_: Exception) {
+                        runCatching { ctx.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
+                    }
+                }) { Text("Buka pengaturan", color = Accent) }
+            },
+            dismissButton = { TextButton(onClick = { vm.needAllFiles = false }) { Text("Nanti", color = Color.White) } },
+        )
+    }
+
     // Android 10 ke bawah: konfirmasi sendiri sebelum hapus (Android 11+ memakai dialog sistem)
     val pd = vm.pendingDelete
     if (pd != null && Build.VERSION.SDK_INT < 30) {
@@ -674,6 +726,12 @@ private fun detailTitle(k: DetailKey) = when (k) {
     is DetailKey.Album -> k.name
     is DetailKey.Artist -> k.name
     is DetailKey.Folder -> k.name.trimEnd('/').substringAfterLast('/').ifBlank { "Folder" }
+    DetailKey.Downloads -> "Lagu terunduh"
+    is DetailKey.Mix -> when (k.id) {
+        "short" -> "Singkat (di bawah 3 menit)"
+        "mid" -> "Sedang (3–5 menit)"
+        else -> "Panjang (di atas 5 menit)"
+    }
 }
 
 // =====================================================================
@@ -1101,84 +1159,6 @@ fun DetailScreen(
 }
 
 // =====================================================================
-//  Cari
-// =====================================================================
-
-@Composable
-fun SearchScreen(vm: MusicViewModel, actions: SongActions, query: String, onQuery: (String) -> Unit, onSelect: (List<Song>, Song) -> Unit) {
-    val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
-    val favSet = remember(vm.favorites) { vm.favorites.toSet() }
-    val q = query.trim()
-    val results = remember(q, vm.songs) {
-        if (q.isEmpty()) emptyList()
-        else vm.songs.filter {
-            it.title.contains(q, true) || it.artist.contains(q, true) || it.album.contains(q, true)
-        }.take(300)
-    }
-
-    Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier
-                .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp)
-                .fillMaxWidth()
-                .height(48.dp)
-                .glass(CircleShape)
-                .padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Rounded.Search, null, tint = Color.White)
-            Spacer(Modifier.width(10.dp))
-            BasicTextField(
-                value = query,
-                onValueChange = onQuery,
-                singleLine = true,
-                textStyle = TextStyle(color = Color.White, fontSize = 16.sp),
-                cursorBrush = SolidColor(Color.White),
-                modifier = Modifier.weight(1f).focusRequester(focus),
-                decorationBox = { inner ->
-                    Box(contentAlignment = Alignment.CenterStart) {
-                        if (query.isEmpty()) Text("Cari lagu, artis, album…", color = SubText, fontSize = 16.sp)
-                        inner()
-                    }
-                },
-            )
-            if (query.isNotEmpty()) {
-                Icon(
-                    Icons.Rounded.Close, "Hapus",
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp).clickable { onQuery("") },
-                )
-            }
-        }
-
-        LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 220.dp)) {
-            if (q.isNotEmpty() && results.isEmpty()) {
-                item {
-                    Text(
-                        "Tidak ada hasil untuk \"$q\"",
-                        color = SubText,
-                        modifier = Modifier.fillMaxWidth().glass().padding(24.dp),
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            }
-            itemsIndexed(results, key = { _, s -> s.uri }) { i, s ->
-                SongRow(
-                    song = s,
-                    current = vm.currentId == s.uri,
-                    playing = vm.isPlaying,
-                    favorite = s.uri in favSet,
-                    shape = rowShape(i, results.size, headerAbove = false),
-                    actions = actions,
-                    onLongClick = { onSelect(results, s) },
-                ) { vm.playList(results, i) }
-            }
-        }
-    }
-}
-
-// =====================================================================
 //  Menu samping (drawer)
 // =====================================================================
 
@@ -1232,5 +1212,169 @@ private fun DrawerItem(icon: ImageVector, label: String, onClick: () -> Unit) {
         Icon(icon, null, tint = Color.White)
         Spacer(Modifier.width(16.dp))
         Text(label, color = Color.White, fontSize = 15.sp)
+    }
+}
+
+
+// =====================================================================
+//  Tab baru: Baru, Radio, Koleksi ("Play Musix"), Cari
+// =====================================================================
+
+@Composable
+private fun SectionTitle(text: String, small: String? = null, modifier: Modifier = Modifier) {
+    Column(modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        if (small != null) Text(small, color = SubText, fontSize = 11.sp, letterSpacing = 1.sp)
+        Text(text, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun TabHeader(
+    title: String,
+    subtitle: String?,
+    onOpenDrawer: () -> Unit,
+    trailing: @Composable RowScope.() -> Unit = {},
+) {
+    Row(
+        Modifier.padding(start = 20.dp, end = 16.dp, top = 12.dp, bottom = 14.dp).fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+            if (subtitle != null) Text(subtitle, color = SubText, fontSize = 13.sp)
+        }
+        trailing()
+        Spacer(Modifier.width(8.dp))
+        GlassIconButton(Icons.Rounded.Menu, "Menu", onOpenDrawer)
+    }
+}
+
+/** Cari: riwayat pencarian saat kolom kosong, hasil saat mengetik. Kolom cari ada di bilah bawah. */
+@Composable
+fun SearchScreen(
+    vm: MusicViewModel,
+    actions: SongActions,
+    query: String,
+    onOpenDrawer: () -> Unit,
+    onSelect: (List<Song>, Song) -> Unit,
+) {
+    val favSet = remember(vm.favorites) { vm.favorites.toSet() }
+    val q = query.trim()
+    val results = remember(q, vm.songs) {
+        if (q.isEmpty()) emptyList()
+        else vm.songs.filter {
+            it.title.contains(q, true) || it.artist.contains(q, true) || it.album.contains(q, true)
+        }.take(300)
+    }
+    val history = vm.songsOf(vm.searchHistory)
+
+    LazyColumn(contentPadding = PaddingValues(top = 4.dp, bottom = 240.dp)) {
+        item { TabHeader("Cari", "Lagu di HP Anda", onOpenDrawer) }
+        if (q.isEmpty()) {
+            if (history.isNotEmpty()) {
+                item {
+                    Row(
+                        Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("DARI PENCARIAN ANDA", color = SubText, fontSize = 11.sp, letterSpacing = 1.sp, modifier = Modifier.weight(1f))
+                        Text(
+                            "Hapus semua", color = Accent, fontSize = 12.sp,
+                            modifier = Modifier.clip(CircleShape).clickable { vm.clearSearchHistory() }.padding(horizontal = 8.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+                itemsIndexed(history, key = { _, s -> "h:" + s.uri }) { i, s ->
+                    SongRow(
+                        song = s,
+                        current = vm.currentId == s.uri,
+                        playing = vm.isPlaying,
+                        favorite = s.uri in favSet,
+                        shape = rowShape(i, history.size, false),
+                        actions = actions,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        onLongClick = { onSelect(history, s) },
+                    ) { vm.playList(history, i) }
+                }
+            } else {
+                item {
+                    Text(
+                        "Ketik judul lagu, artis, atau album di kolom bawah.",
+                        color = SubText,
+                        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().glass().padding(24.dp),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        } else {
+            if (results.isEmpty()) {
+                item {
+                    Text(
+                        "Tidak ada hasil untuk \"$q\"",
+                        color = SubText,
+                        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().glass().padding(24.dp),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+            itemsIndexed(results, key = { _, s -> s.uri }) { i, s ->
+                SongRow(
+                    song = s,
+                    current = vm.currentId == s.uri,
+                    playing = vm.isPlaying,
+                    favorite = s.uri in favSet,
+                    shape = rowShape(i, results.size, headerAbove = false),
+                    actions = actions,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    onLongClick = { onSelect(results, s) },
+                ) {
+                    vm.addSearchHistory(s)
+                    vm.playList(results, i)
+                }
+            }
+        }
+    }
+}
+
+/** Bilah bawah di tab Cari: tombol beranda + kolom cari (menggantikan bilah tab). */
+@Composable
+private fun SearchBottomBar(query: String, onQuery: (String) -> Unit, focus: FocusRequester, onHome: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier.size(52.dp).glass(CircleShape, 1.2f).clickable(onClick = onHome),
+            contentAlignment = Alignment.Center,
+        ) { Icon(Icons.Rounded.Home, "Beranda", tint = Color.White) }
+        Spacer(Modifier.width(10.dp))
+        Row(
+            Modifier
+                .weight(1f)
+                .height(52.dp)
+                .glass(CircleShape, 1.2f)
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.Search, null, tint = Color.White.copy(alpha = 0.8f), modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(10.dp))
+            BasicTextField(
+                value = query,
+                onValueChange = onQuery,
+                singleLine = true,
+                textStyle = TextStyle(color = Color.White, fontSize = 16.sp),
+                cursorBrush = SolidColor(Color.White),
+                modifier = Modifier.weight(1f).focusRequester(focus),
+                decorationBox = { inner ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (query.isEmpty()) Text("Lagu, artis, album", color = SubText, fontSize = 16.sp)
+                        inner()
+                    }
+                },
+            )
+            if (query.isNotEmpty()) {
+                Icon(
+                    Icons.Rounded.Close, "Hapus", tint = Color.White,
+                    modifier = Modifier.size(20.dp).clickable { onQuery("") },
+                )
+            }
+        }
     }
 }

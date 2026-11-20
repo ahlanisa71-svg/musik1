@@ -47,7 +47,7 @@ val BgBrush = Brush.verticalGradient(
     1.00f to Color(0xFF0F0F0C),
 )
 
-class Palette(val name: String, val stops: List<Color>, val blobs: List<Color>)
+class Palette(val name: String, val stops: List<Color>, val blobs: List<Color>, val dark: Boolean = false)
 
 val Palettes = listOf(
     Palette(
@@ -71,14 +71,16 @@ val Palettes = listOf(
         listOf(Color(0x99FFC0A0), Color(0x80FF7F9F), Color(0x70B68CFF), Color(0x70FFB36B)),
     ),
     Palette(
-        "Mawar",
-        listOf(Color(0xFFE8A0B4), Color(0xFFB86A86), Color(0xFF58344A), Color(0xFF160D13)),
-        listOf(Color(0x99FFD0DC), Color(0x80FF8FA8), Color(0x70D79BE8), Color(0x70FFB38A)),
+        "Hitam",
+        listOf(Color.Black, Color.Black, Color.Black, Color.Black),
+        listOf(Color.Transparent, Color.Transparent, Color.Transparent, Color.Transparent),
+        dark = true,
     ),
     Palette(
         "Malam",
         listOf(Color(0xFF5A5F6B), Color(0xFF3A3E48), Color(0xFF1C1E25), Color(0xFF08090C)),
         listOf(Color(0x66A0B4FF), Color(0x55B0A0FF), Color(0x55FFA0C0), Color(0x5560D0C0)),
+        dark = true,
     ),
 )
 
@@ -87,7 +89,17 @@ object AppTheme {
     var index by androidx.compose.runtime.mutableIntStateOf(0)
     val palette: Palette get() = Palettes[index.coerceIn(0, Palettes.lastIndex)]
 
+    /** Layar OLED: latar hitam murni. Hanya berlaku untuk tema gelap. */
+    var pureBlack by androidx.compose.runtime.mutableStateOf(false)
+    val pureBlackActive: Boolean get() = pureBlack && palette.dark
+
+    fun setPureBlack(ctx: android.content.Context, v: Boolean) {
+        pureBlack = v
+        com.glassplayer.app.data.Store(ctx.applicationContext).pureBlack = v
+    }
+
     fun brush(): Brush {
+        if (pureBlackActive) return Brush.verticalGradient(listOf(Color.Black, Color.Black))
         val c = palette.stops
         return Brush.verticalGradient(0.00f to c[0], 0.30f to c[1], 0.62f to c[2], 1.00f to c[3])
     }
@@ -197,6 +209,7 @@ fun DefaultBackdrop() {
                         center = center,
                     )
                 }
+                if (AppTheme.pureBlackActive) return@drawBehind
                 val b = AppTheme.palette.blobs
                 blob(0.92f, 0.16f, 0.75f, b[0])
                 blob(0.04f, 0.38f, 0.65f, b[1])

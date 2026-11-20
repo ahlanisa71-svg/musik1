@@ -44,6 +44,9 @@ sealed interface DetailKey {
     data class Album(val name: String) : DetailKey
     data class Artist(val name: String) : DetailKey
     data class Folder(val name: String) : DetailKey
+    data object Downloads : DetailKey
+    /** Campuran berdasarkan durasi: "short", "mid", "long". */
+    data class Mix(val id: String) : DetailKey
 }
 
 class MusicViewModel(app: Application) : AndroidViewModel(app) {
@@ -219,13 +222,43 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Lagu yang baru dihapus: disembunyikan dari hasil pindai walau indeks Android belum diperbarui. */
-    private val deletedUris = HashSet<String>()
+    private val deletedUris = HashSet<String>(store.loadList("hidden"))
+    /** Lokasi file yang sudah dihapus: tetap disembunyikan walau indeks Android memberi ID baru. */
+    private val deletedPaths = HashSet<String>(store.loadList("hidden_paths"))
+
+    /** True bila ada file yang tidak bisa dihapus sistem dan perlu izin "akses semua file". */
+    var needAllFiles by mutableStateOf(false)
+
+    /** File yang ditolak sistem; dihapus otomatis begitu izin "akses semua file" diberikan. */
+    private val leftover = HashSet<String>()
+
+    fun retryLeftovers() {
+        if (leftover.isEmpty() || !hasAllFilesAccess()) return
+        val todo = leftover.toList()
+        leftover.clear()
+        viewModelScope.launch {
+            val n = withContext(Dispatchers.IO) {
+                var bad = 0
+                todo.forEach { p ->
+                    val f = java.io.File(p)
+                    if (f.exists() && !f.delete()) bad++
+                }
+                android.media.MediaScannerConnection.scanFile(getApplication(), todo.toTypedArray(), null, null)
+                bad
+            }
+            toast(if (n == 0) "${todo.size} file dihapus permanen" else "$n file masih gagal dihapus")
+            loadSongs()
+        }
+    }
+
+    fun hasAllFilesAccess(): Boolean =
+        android.os.Build.VERSION.SDK_INT < 30 || android.os.Environment.isExternalStorageManager()
 
     fun loadSongs() {
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             loading = true
-            val scanned = MediaRepository.scan(getApplication()).filter { it.uri !in deletedUris }
+            val scanned = MediaRepository.scan(getApplication()).filter { it.uri !in deletedUris && (it.path.isEmpty() || it.path !in deletedPaths) }
             val known = scanned.mapTo(HashSet()) { it.uri }
             val extra = store.loadExtra().filter { it.uri !in known }
             allSongs = scanned + extra
@@ -283,6 +316,29 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         is DetailKey.Album -> allSongs.filter { it.album == key.name }.sortedBy { it.title.lowercase() }
         is DetailKey.Artist -> allSongs.filter { it.artist == key.name }.sortedBy { it.title.lowercase() }
         is DetailKey.Folder -> allSongs.filter { it.folder == key.name }.sortedBy { it.title.lowercase() }
+        DetailKey.Downloads -> allSongs.filter { it.folder.contains("download", ignoreCase = true) }
+            .sortedByDescending { it.dateAdded }
+        is DetailKey.Mix -> allSongs.filter {
+            when (key.id) {
+                "short" -> it.durationMs in 1 until 180_000
+                "mid" -> it.durationMs in 180_000..300_000
+                else -> it.durationMs > 300_000
+            }
+        }.sortedBy { it.title.lowercase() }
+    }
+
+    // ---------- Riwayat pencarian (lagu yang dipilih dari hasil cari) ----------
+    var searchHistory by mutableStateOf(store.loadList("search_hist"))
+        private set
+
+    fun addSearchHistory(song: Song) {
+        searchHistory = (listOf(song.uri) + searchHistory.filter { it != song.uri }).take(30)
+        store.saveList("search_hist", searchHistory)
+    }
+
+    fun clearSearchHistory() {
+        searchHistory = emptyList()
+        store.saveList("search_hist", searchHistory)
     }
 
     // ---------- Favorit & playlist ----------
@@ -349,7 +405,26 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             } catch (_: Exception) {
             }
         }
-        pendingDelete = list
+        // Dengan izin "akses semua file" hapus langsung & pasti, tanpa dialog sistem.
+        if (android.os.Build.VERSION.SDK_INT >= 30 && android.os.Environment.isExternalStorageManager()) {
+            deleteWithFiles(list)
+        } else {
+            pendingDelete = list
+        }
+    }
+
+    private fun deleteWithFiles(list: List<Song>) {
+        val cr = getApplication<Application>().contentResolver
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                list.forEach { s ->
+                    val p = s.path.ifEmpty { pathOf[s.uri].orEmpty() }
+                    if (p.isNotEmpty()) runCatching { java.io.File(p).delete() }
+                    runCatching { cr.delete(Uri.parse(s.uri), null, null) }
+                }
+            }
+            onDeleteDone(list)
+        }
     }
 
     fun clearPendingDelete() {
@@ -371,6 +446,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     fun onDeleteDone(list: List<Song>) {
         val gone = list.mapTo(HashSet()) { it.uri }
         deletedUris.addAll(gone)
+        store.saveList("hidden", deletedUris.toList())
+        list.forEach { s -> s.path.takeIf { it.isNotEmpty() }?.let { deletedPaths.add(it) } }
+        store.saveList("hidden_paths", deletedPaths.toList())
         favorites = favorites.filter { it !in gone }
         store.saveList("fav", favorites)
         recents = recents.filter { it !in gone }
@@ -387,20 +465,25 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         // Pastikan file asli benar-benar hilang dari penyimpanan (bukan hanya dari indeks).
-        val paths = gone.mapNotNull { pathOf.remove(it) }
+        val paths = (gone.mapNotNull { pathOf.remove(it) } + list.mapNotNull { it.path.takeIf { p -> p.isNotEmpty() } }).distinct()
+        deletedPaths.addAll(paths)
+        store.saveList("hidden_paths", deletedPaths.toList())
         viewModelScope.launch {
             val left = withContext(Dispatchers.IO) {
                 var n = 0
                 paths.forEach { p ->
                     val f = java.io.File(p)
-                    if (f.exists() && !f.delete()) n++
+                    if (f.exists() && !f.delete()) { n++; leftover.add(p) }
                 }
                 if (paths.isNotEmpty()) {
                     android.media.MediaScannerConnection.scanFile(getApplication(), paths.toTypedArray(), null, null)
                 }
                 n
             }
-            if (left > 0) toast("$left file belum terhapus dari penyimpanan, hapus lewat pengelola file")
+            if (left > 0) {
+                if (!hasAllFilesAccess()) needAllFiles = true
+                else toast("$left file belum terhapus dari penyimpanan, hapus lewat pengelola file")
+            }
         }
         toast("${list.size} lagu dihapus")
         loadSongs()

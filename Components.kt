@@ -40,6 +40,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -56,7 +57,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
@@ -411,14 +415,17 @@ fun MiniPlayer(vm: MusicViewModel, onClick: () -> Unit) {
 @Composable
 fun BottomBar(selected: Int, onSelect: (Int) -> Unit) {
     val items = listOf(
-        Triple("Pustaka", Icons.Rounded.LibraryMusic, 0),
+        Triple("Pustaka", Icons.Rounded.Home, 0),
         Triple("Cari", Icons.Rounded.Search, 1),
         Triple("Favorit", Icons.Rounded.Favorite, 2),
     )
+    val pill = RoundedCornerShape(32.dp)
     Row(
         Modifier
             .fillMaxWidth()
-            .glass(RoundedCornerShape(32.dp), 1.2f)
+            .clip(pill)
+            .background(Color.Black.copy(alpha = 0.55f))
+            .border(1.5.dp, Color.White.copy(alpha = 0.30f), pill)
             .padding(6.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
@@ -428,17 +435,17 @@ fun BottomBar(selected: Int, onSelect: (Int) -> Unit) {
                 Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(26.dp))
-                    .background(if (sel) Color.White.copy(alpha = 0.24f) else Color.Transparent)
+                    .background(if (sel) Color.White.copy(alpha = 0.16f) else Color.Transparent)
                     .clickable { onSelect(idx) }
                     .padding(vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Icon(icon, label, tint = if (sel) Color.White else Color.White.copy(alpha = 0.65f))
+                Icon(icon, label, tint = if (sel) Accent else Color.White.copy(alpha = 0.7f))
                 Text(
                     label,
                     fontSize = 11.sp,
-                    color = if (sel) Color.White else Color.White.copy(alpha = 0.65f),
-                    fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (sel) Accent else Color.White.copy(alpha = 0.7f),
+                    fontWeight = FontWeight.SemiBold,
                 )
             }
         }
