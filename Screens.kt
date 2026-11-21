@@ -467,17 +467,11 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
                     }
                     st.tab == 1 -> NewMusicScreen(vm) { list, title -> if (list.isNotEmpty()) vm.playList(list, 0) }
                     st.tab == 2 -> RadioMoodScreen(vm) { list, title -> if (list.isNotEmpty()) vm.shuffleAll(list) }
-                    st.tab == 3 -> LibraryScreen(
+                    st.tab == 3 -> LibraryTabScreen(
                         vm = vm,
-                        actions = actions,
                         onOpenDrawer = { scope.launch { drawerState.open() } },
-                        onSearch = { tab = 4 },
                         onDetail = { detail = it },
-                        onPlaylists = { pageFrom = null; page = Page.Playlists },
                         onNewPlaylist = { afterCreate = null; showNewPlaylist = true },
-                        onPickFiles = { pickFiles() },
-                        onSelect = onSelect,
-                        onSelectMode = { list -> selection = Sel(list, emptySet()) },
                     )
                     st.tab == 4 -> SearchScreen(vm, actions, query, { scope.launch { drawerState.open() } }, onSelect)
                     st.tab == 0 -> LibraryScreen(
@@ -1294,6 +1288,169 @@ private fun TabHeader(
         trailing()
         Spacer(Modifier.width(8.dp))
         GlassIconButton(Icons.Rounded.Menu, "Menu", onOpenDrawer)
+    }
+}
+
+
+private class LibEntry(
+    val key: String,
+    val title: String,
+    val art: Song?,
+    val icon: ImageVector,
+    val tint: Color,
+    val onClick: () -> Unit,
+)
+
+/** Library: ubin besar "Local files" / "Downloaded songs", chip, dan kolom cari. */
+@Composable
+private fun LibraryTabScreen(
+    vm: MusicViewModel,
+    onOpenDrawer: () -> Unit,
+    onDetail: (DetailKey) -> Unit,
+    onNewPlaylist: () -> Unit,
+) {
+    var chip by rememberSaveable { mutableStateOf(0) }
+    var q by rememberSaveable { mutableStateOf("") }
+    val names = listOf("Everything", "Playlists", "Artists", "Albums")
+    val green = Color(0xFF2ECC5B)
+    val blue = Color(0xFF30B6E8)
+    val pink = Color(0xFFFF6F91)
+
+    val fixed = listOf(
+        LibEntry("f:fav", "Favorites", vm.songsOf(vm.favorites).firstOrNull(), Icons.Rounded.Favorite, pink) { onDetail(DetailKey.Favorites) },
+        LibEntry("f:local", "Local files", null, Icons.Rounded.FolderOpen, green) { onDetail(DetailKey.All) },
+        LibEntry("f:down", "Downloaded songs", null, Icons.Rounded.Download, blue) { onDetail(DetailKey.Downloads) },
+    )
+    val playlistEntries = vm.playlists.keys.map { name ->
+        LibEntry("p:$name", name, vm.songsOf(vm.playlists[name].orEmpty()).firstOrNull(), Icons.Rounded.PlaylistPlay, Color.White) { onDetail(DetailKey.Playlist(name)) }
+    }
+    val artistEntries = remember(vm.allSongs) {
+        vm.allSongs.groupBy { it.artist }.map { it.key to it.value }.sortedBy { it.first.lowercase() }
+    }.map { (name, list) ->
+        LibEntry("a:$name", name, list.firstOrNull(), Icons.Rounded.Person, Color.White) { onDetail(DetailKey.Artist(name)) }
+    }
+    val albumEntries = remember(vm.allSongs) {
+        vm.allSongs.filter { it.album.isNotBlank() }.groupBy { it.album }.map { it.key to it.value }.sortedBy { it.first.lowercase() }
+    }.map { (name, list) ->
+        LibEntry("al:$name", name, list.firstOrNull(), Icons.Rounded.Album, Color.White) { onDetail(DetailKey.Album(name)) }
+    }
+
+    val needle = q.trim()
+    val shown = when (chip) {
+        0 -> fixed + playlistEntries
+        1 -> listOf(LibEntry("p:new", "New playlist", null, Icons.Rounded.Add, Color.White, onNewPlaylist)) + playlistEntries
+        2 -> artistEntries
+        else -> albumEntries
+    }.filter { needle.isEmpty() || it.title.contains(needle, ignoreCase = true) }
+
+    LazyColumn(contentPadding = PaddingValues(top = 4.dp, bottom = 220.dp)) {
+        item {
+            Row(
+                Modifier.padding(start = 20.dp, end = 16.dp, top = 12.dp, bottom = 10.dp).fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("${shown.size} items", color = SubText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Text("LIBRARY", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = 3.sp)
+                }
+                GlassIconButton(Icons.Rounded.Menu, "Menu", onOpenDrawer)
+            }
+        }
+        item {
+            Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                LazyRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    itemsIndexed(names) { i, n ->
+                        val sel = i == chip
+                        Box(
+                            Modifier
+                                .clip(CircleShape)
+                                .background(if (sel) Color.White.copy(alpha = 0.32f) else Color.Black.copy(alpha = 0.35f))
+                                .border(1.dp, Color.White.copy(alpha = 0.30f), CircleShape)
+                                .clickable { chip = i }
+                                .padding(horizontal = 16.dp, vertical = 9.dp),
+                        ) {
+                            Text(n, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                GlassIconButton(Icons.Rounded.Sort, "Sort: ${vm.sortLabel}", vm::cycleSort)
+            }
+            Spacer(Modifier.height(14.dp))
+        }
+        item {
+            Row(
+                Modifier
+                    .padding(horizontal = 16.dp)
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.35f))
+                    .border(1.dp, Color.White.copy(alpha = 0.30f), CircleShape)
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Rounded.Search, null, tint = SubText, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(10.dp))
+                BasicTextField(
+                    value = q,
+                    onValueChange = { q = it },
+                    singleLine = true,
+                    textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
+                    cursorBrush = SolidColor(Color.White),
+                    modifier = Modifier.weight(1f),
+                    decorationBox = { inner ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (q.isEmpty()) Text("Search your library", color = SubText, fontSize = 15.sp)
+                            inner()
+                        }
+                    },
+                )
+                if (q.isNotEmpty()) {
+                    Icon(Icons.Rounded.Close, "Clear", tint = Color.White, modifier = Modifier.size(20.dp).clickable { q = "" })
+                }
+            }
+            Spacer(Modifier.height(18.dp))
+        }
+        items(shown.chunked(2), key = { row -> row.first().key }) { pair ->
+            Row(
+                Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                pair.forEach { e ->
+                    Column(Modifier.weight(1f).clickable(onClick = e.onClick)) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(1f)
+                                .clip(RoundedCornerShape(26.dp))
+                                .background(Color(0xFF1F2F6E)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (e.art != null) {
+                                ArtImage(e.art, Modifier.fillMaxSize(), androidx.compose.ui.graphics.RectangleShape, seed = e.title)
+                            } else {
+                                Icon(e.icon, null, tint = e.tint, modifier = Modifier.size(64.dp))
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text(e.title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(18.dp))
+        }
+        if (shown.isEmpty()) {
+            item {
+                Text(
+                    "Nothing found.",
+                    color = SubText,
+                    modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().padding(24.dp),
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
     }
 }
 

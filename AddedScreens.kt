@@ -162,6 +162,22 @@ fun AppSettingsPage(onBack: () -> Unit, onTheme: () -> Unit) {
             Row(Modifier.fillMaxWidth().clickable { onTheme() }.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Palette, null, tint = Accent); Spacer(Modifier.width(14.dp)); Column(Modifier.weight(1f)) { Text("Appearance", color = Color.White); Text("Tema dan warna aplikasi", color = SubText, fontSize = 11.sp) }; Icon(Icons.Rounded.ChevronRight, null, tint = SubText)
             }
+            val canBlack = AppTheme.palette.dark
+            Row(
+                Modifier.fillMaxWidth().clickable { if (canBlack) AppTheme.setPureBlack(ctx, !AppTheme.pureBlack) }.padding(18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Rounded.Contrast, null, tint = Accent); Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Hitam murni (OLED)", color = Color.White)
+                    Text(if (canBlack) "Latar hitam total, piksel OLED mati" else "Hanya bisa dipakai di tema gelap (Malam / Hitam)", color = SubText, fontSize = 11.sp)
+                }
+                Switch(
+                    checked = AppTheme.pureBlack && canBlack,
+                    enabled = canBlack,
+                    onCheckedChange = { AppTheme.setPureBlack(ctx, it) },
+                )
+            }
             Row(Modifier.fillMaxWidth().clickable { runCatching { ctx.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}"))) } }.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Settings, null, tint = Accent); Spacer(Modifier.width(14.dp)); Column(Modifier.weight(1f)) { Text("System", color = Color.White); Text("Izin, baterai, dan pengaturan Android", color = SubText, fontSize = 11.sp) }; Icon(Icons.Rounded.ChevronRight, null, tint = SubText)
             }

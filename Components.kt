@@ -418,7 +418,7 @@ fun BottomBar(selected: Int, onSelect: (Int) -> Unit) {
         Triple("Home", Icons.Rounded.Home, 0),
         Triple("New", Icons.Rounded.GridView, 1),
         Triple("Radio", Icons.Rounded.Radio, 2),
-        Triple("Pustaka", Icons.Rounded.MusicNote, 3),
+        Triple("Library", Icons.Rounded.MusicNote, 3),
         Triple("Search", Icons.Rounded.Search, 4),
     )
     val pill = RoundedCornerShape(32.dp)

@@ -93,7 +93,7 @@ sealed interface Page {
 }
 
 const val APP_NAME = "Musix"
-const val APP_VERSION = "1.9.6"
+const val APP_VERSION = "1.9.7"
 const val CONTACT_EMAIL = "rifqihisyammuddin429@gmail.com"
 const val IG_URL = "https://www.instagram.com/rifsy_am"
 const val IG_NAME = "rifsy_am"
@@ -270,23 +270,6 @@ fun SettingsPage(
                 SettingRow("Kecepatan putar", speedLabel(vm.playbackSpeed), Icons.Rounded.Speed, onClick = { showSpeed = true })
                 RowDivider()
                 SettingRow("Crossfade", crossfadeLabel(vm.crossfadeSec), Icons.Rounded.SwapHoriz, onClick = { showCf = true })
-                RowDivider()
-                SettingRow("Tema warna", Palettes[AppTheme.index.coerceIn(0, Palettes.lastIndex)].name, Icons.Rounded.Palette, onClick = { onPage(Page.Theme) })
-                RowDivider()
-                val canBlack = AppTheme.palette.dark
-                SettingRow(
-                    "Hitam murni (OLED)",
-                    if (canBlack) "Latar hitam total, piksel OLED mati" else "Hanya bisa dipakai di tema gelap (Malam / Hitam)",
-                    Icons.Rounded.Contrast,
-                    onClick = { if (canBlack) AppTheme.setPureBlack(ctx, !AppTheme.pureBlack) },
-                    trailing = {
-                        Switch(
-                            checked = AppTheme.pureBlack && canBlack,
-                            enabled = canBlack,
-                            onCheckedChange = { AppTheme.setPureBlack(ctx, it) },
-                        )
-                    },
-                )
             }
             Spacer(Modifier.height(16.dp))
             Column(Modifier.cascade(2).fillMaxWidth().glass()) {
