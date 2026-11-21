@@ -88,10 +88,12 @@ sealed interface Page {
     data object Playlists : Page
     data object Equalizer : Page
     data object Theme : Page
+    data object DownloadsStorage : Page
+    data object App : Page
 }
 
 const val APP_NAME = "Musix"
-const val APP_VERSION = "1.9.5"
+const val APP_VERSION = "1.9.6"
 const val CONTACT_EMAIL = "rifqihisyammuddin429@gmail.com"
 const val IG_URL = "https://www.instagram.com/rifsy_am"
 const val IG_NAME = "rifsy_am"
@@ -245,6 +247,10 @@ fun SettingsPage(
         ) {
             Spacer(Modifier.height(6.dp))
             Column(Modifier.cascade(0).fillMaxWidth().glass()) {
+                SettingRow("Downloads and storage", "Unduhan dan ruang penyimpanan", Icons.Rounded.Download, onClick = { onPage(Page.DownloadsStorage) })
+                RowDivider()
+                SettingRow("App", "Language, appearance, system and links", Icons.Rounded.Settings, onClick = { onPage(Page.App) })
+                RowDivider()
                 SettingRow(
                     "Layar kunci kaca", "Tampil saat layar mati & musik jalan", Icons.Rounded.Lock,
                     onClick = { onToggleLock(!vm.lockScreenEnabled) },

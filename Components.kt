@@ -415,38 +415,28 @@ fun MiniPlayer(vm: MusicViewModel, onClick: () -> Unit) {
 @Composable
 fun BottomBar(selected: Int, onSelect: (Int) -> Unit) {
     val items = listOf(
-        Triple("Pustaka", Icons.Rounded.Home, 0),
-        Triple("Cari", Icons.Rounded.Search, 1),
-        Triple("Favorit", Icons.Rounded.Favorite, 2),
+        Triple("Home", Icons.Rounded.Home, 0),
+        Triple("New", Icons.Rounded.GridView, 1),
+        Triple("Radio", Icons.Rounded.Radio, 2),
+        Triple("Pustaka", Icons.Rounded.MusicNote, 3),
+        Triple("Search", Icons.Rounded.Search, 4),
     )
     val pill = RoundedCornerShape(32.dp)
     Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(pill)
-            .background(Color.Black.copy(alpha = 0.55f))
-            .border(1.5.dp, Color.White.copy(alpha = 0.30f), pill)
-            .padding(6.dp),
+        Modifier.fillMaxWidth().clip(pill).background(Color.Black.copy(alpha = 0.55f))
+            .border(1.5.dp, Color.White.copy(alpha = 0.30f), pill).padding(5.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
         items.forEach { (label, icon, idx) ->
             val sel = idx == selected
             Column(
-                Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(26.dp))
+                Modifier.weight(1f).clip(RoundedCornerShape(26.dp))
                     .background(if (sel) Color.White.copy(alpha = 0.16f) else Color.Transparent)
-                    .clickable { onSelect(idx) }
-                    .padding(vertical = 8.dp),
+                    .clickable { onSelect(idx) }.padding(vertical = 7.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Icon(icon, label, tint = if (sel) Accent else Color.White.copy(alpha = 0.7f))
-                Text(
-                    label,
-                    fontSize = 11.sp,
-                    color = if (sel) Accent else Color.White.copy(alpha = 0.7f),
-                    fontWeight = FontWeight.SemiBold,
-                )
+                Icon(icon, label, tint = if (sel) Accent else Color.White.copy(alpha = 0.7f), modifier = Modifier.size(21.dp))
+                Text(label, fontSize = 10.sp, color = if (sel) Accent else Color.White.copy(alpha = 0.7f), fontWeight = FontWeight.SemiBold)
             }
         }
     }

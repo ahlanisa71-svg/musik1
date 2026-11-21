@@ -609,7 +609,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Dari widget "Cari dan putar": buka tab cari. */
     fun requestSearchTab() {
-        pendingTab = 1
+        pendingTab = 4
     }
 
     private fun flushActions() {

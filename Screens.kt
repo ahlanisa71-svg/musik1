@@ -335,7 +335,7 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
 
     var tab by rememberSaveable { mutableStateOf(0) }
     val searchFocus = remember { FocusRequester() }
-    LaunchedEffect(tab) { if (tab == 1) runCatching { searchFocus.requestFocus() } }
+    LaunchedEffect(tab) { if (tab == 4) runCatching { searchFocus.requestFocus() } }
     var detail by remember { mutableStateOf<DetailKey?>(null) }
     var page by remember { mutableStateOf<Page?>(null) }
     var pageFrom by remember { mutableStateOf<Page?>(null) }
@@ -456,6 +456,8 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
                         Page.Widgets -> WidgetsPage(vm) { pageBack() }
                         Page.Equalizer -> EqualizerPage { pageBack() }
                         Page.Theme -> ThemePage { pageBack() }
+                        Page.DownloadsStorage -> DownloadsStoragePage(vm) { pageBack() }
+                        Page.App -> AppSettingsPage(onBack = { pageBack() }, onTheme = { pageFrom = Page.App; page = Page.Theme })
                         Page.Playlists -> PlaylistsPage(
                             vm = vm,
                             onBack = { pageBack() },
@@ -463,11 +465,13 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
                             onNew = { afterCreate = null; showNewPlaylist = true },
                         )
                     }
-                    st.tab == 0 -> LibraryScreen(
+                    st.tab == 1 -> NewMusicScreen(vm) { list, title -> if (list.isNotEmpty()) vm.playList(list, 0) }
+                    st.tab == 2 -> RadioMoodScreen(vm) { list, title -> if (list.isNotEmpty()) vm.shuffleAll(list) }
+                    st.tab == 3 -> LibraryScreen(
                         vm = vm,
                         actions = actions,
                         onOpenDrawer = { scope.launch { drawerState.open() } },
-                        onSearch = { tab = 1 },
+                        onSearch = { tab = 4 },
                         onDetail = { detail = it },
                         onPlaylists = { pageFrom = null; page = Page.Playlists },
                         onNewPlaylist = { afterCreate = null; showNewPlaylist = true },
@@ -475,7 +479,16 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
                         onSelect = onSelect,
                         onSelectMode = { list -> selection = Sel(list, emptySet()) },
                     )
-                    st.tab == 1 -> SearchScreen(vm, actions, query, { scope.launch { drawerState.open() } }, onSelect)
+                    st.tab == 4 -> SearchScreen(vm, actions, query, { scope.launch { drawerState.open() } }, onSelect)
+                    st.tab == 0 -> LibraryScreen(
+                        vm = vm, actions = actions,
+                        onOpenDrawer = { scope.launch { drawerState.open() } },
+                        onSearch = { tab = 4 }, onDetail = { detail = it },
+                        onPlaylists = { pageFrom = null; page = Page.Playlists },
+                        onNewPlaylist = { afterCreate = null; showNewPlaylist = true },
+                        onPickFiles = { pickFiles() }, onSelect = onSelect,
+                        onSelectMode = { list -> selection = Sel(list, emptySet()) },
+                    )
                     else -> DetailScreen(
                         title = "Favorit",
                         songs = vm.listFor(DetailKey.Favorites),
@@ -496,12 +509,12 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
                 Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .then(if (tab == 1 && detail == null && page == null) Modifier.imePadding() else Modifier)
+                    .then(if (tab == 4 && detail == null && page == null) Modifier.imePadding() else Modifier)
                     .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
                 MiniPlayer(vm) { showNow = true }
                 if (vm.currentSong != null) Spacer(Modifier.height(10.dp))
-                if (tab == 1 && detail == null && page == null) {
+                if (tab == 4 && detail == null && page == null) {
                     SearchBottomBar(
                         query = query,
                         onQuery = { query = it },
@@ -862,7 +875,26 @@ fun LibraryScreen(
     onSelect: (List<Song>, Song) -> Unit,
     onSelectMode: (List<Song>) -> Unit,
 ) {
-    val songs = vm.songs
+    var selectedMood by rememberSaveable { mutableStateOf<String?>(null) }
+    val moodKeywords = mapOf(
+        "Relax" to listOf("relax", "acoustic", "piano", "ambient"),
+        "Sad" to listOf("sad", "galau", "rindu", "sepi", "kecewa", "patah"),
+        "Happy" to listOf("happy", "bahagia", "senang", "smile"),
+        "Romantic" to listOf("love", "cinta", "romance", "sayang"),
+        "Chill" to listOf("chill", "lofi", "jazz", "soft"),
+        "Focus" to listOf("focus", "study", "instrumental", "ambient"),
+        "Workout" to listOf("workout", "gym", "sport", "run"),
+        "Sleep" to listOf("sleep", "lullaby", "piano", "relax"),
+        "Commute" to listOf("commute", "road", "drive", "jalanan"),
+        "Party" to listOf("party", "dance", "remix", "club"),
+    )
+    val songs = remember(vm.songs, selectedMood) {
+        val keys = selectedMood?.let { moodKeywords[it].orEmpty() }.orEmpty()
+        if (keys.isEmpty()) vm.songs else vm.songs.filter { song ->
+            val haystack = "${song.title} ${song.artist} ${song.album}".lowercase()
+            keys.any { it in haystack }
+        }
+    }
     var libTab by rememberSaveable { mutableStateOf(0) }
     val favSet = remember(vm.favorites) { vm.favorites.toSet() }
     val albums = remember(vm.allSongs) {
@@ -905,6 +937,23 @@ fun LibraryScreen(
                     Text("Play Musix", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     Icon(Icons.Rounded.MusicNote, null, tint = Color.White)
                 }
+            }
+            Spacer(Modifier.height(12.dp))
+            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(listOf("Relax", "Sad", "Happy", "Romantic", "Chill", "Focus", "Workout", "Sleep", "Commute", "Party")) { mood ->
+                    val active = selectedMood == mood
+                    Box(
+                        Modifier.clip(CircleShape)
+                            .background(if (active) Color.White else Color.White.copy(alpha = 0.16f))
+                            .clickable { selectedMood = if (active) null else mood }
+                            .padding(horizontal = 16.dp, vertical = 9.dp),
+                    ) {
+                        Text(mood, color = if (active) Color.Black else Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+            if (selectedMood != null) {
+                Text("Kategori ${selectedMood} • ${songs.size} lagu cocok", color = SubText, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp))
             }
             Spacer(Modifier.height(16.dp))
         }
