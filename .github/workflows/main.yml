@@ -133,8 +133,8 @@ jobs:
                   applicationId = "com.glassplayer.app"
                   minSdk = 26
                   targetSdk = 34
-                  versionCode = 15
-                  versionName = "1.9.6"
+                  versionCode = 16
+                  versionName = "1.9.7"
                   val repo = System.getenv("GITHUB_REPOSITORY") ?: "ahlanisa71-svg/Musik"
                   buildConfigField("String", "UPDATE_REPO", "\"$repo\"")
               }
