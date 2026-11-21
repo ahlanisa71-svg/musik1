@@ -48,6 +48,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.NewReleases
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PrivacyTip
@@ -898,13 +899,11 @@ fun LibraryScreen(
                     Modifier
                         .weight(1f)
                         .height(44.dp)
-                        .glass(CircleShape)
-                        .clickable(onClick = onSearch)
-                        .padding(horizontal = 16.dp),
+                        .padding(horizontal = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Cari lagu, artis, album…", color = SubText, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                    Icon(Icons.Rounded.Search, null, tint = Color.White)
+                    Text("Play Musix", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Icon(Icons.Rounded.MusicNote, null, tint = Color.White)
                 }
             }
             Spacer(Modifier.height(16.dp))
