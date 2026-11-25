@@ -204,8 +204,7 @@ jobs:
           '''
 
           with open("app/build.gradle.kts", "w", encoding="utf-8") as f:
-              f.write(app_gradle_body.strip() + "
-")
+              f.write(app_gradle_body.strip() + "\n")
           EOF
 
           if [ ! -f "app/musix.keystore" ] && [ ! -f "musix.keystore" ]; then
