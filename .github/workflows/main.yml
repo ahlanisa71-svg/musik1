@@ -63,19 +63,20 @@ jobs:
 
           if not has_song_decl:
               song_file = f"app/src/main/java/{pkg_path}/data/Song.kt"
+              song_code = (
+                  "package com.glassplayer.app.data\n\n"
+                  "data class Song(\n"
+                  "    val id: String = \"\",\n"
+                  "    val title: String = \"\",\n"
+                  "    val artist: String = \"\",\n"
+                  "    val album: String = \"\",\n"
+                  "    val duration: Long = 0L,\n"
+                  "    val streamUrl: String = \"\",\n"
+                  "    val artworkUrl: String = \"\"\n"
+                  ")\n"
+              )
               with open(song_file, "w", encoding="utf-8") as f:
-                  f.write("""package com.glassplayer.app.data
-
-data class Song(
-    val id: String = "",
-    val title: String = "",
-    val artist: String = "",
-    val album: String = "",
-    val duration: Long = 0L,
-    val streamUrl: String = "",
-    val artworkUrl: String = ""
-)
-""")
+                  f.write(song_code)
 
           if os.path.exists("AndroidManifest.xml"):
               shutil.copy("AndroidManifest.xml", "app/src/main/AndroidManifest.xml")
@@ -173,8 +174,8 @@ data class Song(
               }
 
               compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION_17
-                  targetCompatibility = JavaVersion.VERSION_17
+                  sourceCompatibility = JavaVersion.VERSION.17
+                  targetCompatibility = JavaVersion.VERSION.17
                   isCoreLibraryDesugaringEnabled = true
               }
 
