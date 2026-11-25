@@ -35,11 +35,6 @@ jobs:
           pkg_path = pkg.replace(".", "/")
 
           os.makedirs(f"app/src/main/java/{pkg_path}", exist_ok=True)
-          os.makedirs(f"app/src/main/java/{pkg_path}/data", exist_ok=True)
-          os.makedirs(f"app/src/main/java/{pkg_path}/ui", exist_ok=True)
-          os.makedirs(f"app/src/main/java/{pkg_path}/youtube", exist_ok=True)
-          os.makedirs(f"app/src/main/java/{pkg_path}/download", exist_ok=True)
-          os.makedirs(f"app/src/main/java/{pkg_path}/lyrics", exist_ok=True)
           os.makedirs("app/src/main/res/values", exist_ok=True)
           os.makedirs("app/src/main/res/drawable", exist_ok=True)
           os.makedirs("app/src/main/res/layout", exist_ok=True)
@@ -52,274 +47,15 @@ jobs:
                   os.makedirs("app/src/main/assets", exist_ok=True)
                   shutil.copy(doc, f"app/src/main/assets/{doc}")
 
-          all_kt_content = ""
-          has_song_decl = False
           for fname in os.listdir("."):
               if fname.endswith(".kt") and os.path.isfile(fname):
                   with open(fname, "r", encoding="utf-8") as f:
                       content = f.read()
-                  all_kt_content += "\n" + content
-                  if re.search(r'\b(data\s+class|class|interface|object)\s+Song\b', content):
-                      has_song_decl = True
                   m = re.search(r'^\s*package\s+([\w\.]+)', content, re.MULTILINE)
                   target_pkg = m.group(1) if m else pkg
                   target_dir = f"app/src/main/java/{target_pkg.replace('.', '/')}"
                   os.makedirs(target_dir, exist_ok=True)
                   shutil.copy(fname, os.path.join(target_dir, fname))
-
-          if not has_song_decl:
-              song_lines = [
-                  "package com.glassplayer.app.data",
-                  "",
-                  "data class Song(",
-                  '    val id: String = "",',
-                  '    val title: String = "",',
-                  '    val artist: String = "",',
-                  '    val album: String = "",',
-                  "    val duration: Long = 0L,",
-                  '    val uri: String = "",',
-                  "    val artworkUri: String? = null,",
-                  '    val streamUrl: String = "",',
-                  "    val isDownloaded: Boolean = false",
-                  ")",
-                  ""
-              ]
-              with open(f"app/src/main/java/{pkg_path}/data/Song.kt", "w", encoding="utf-8") as f:
-                  f.write("\n".join(song_lines))
-
-          shims = []
-
-          if "class DetailKey" not in all_kt_content and "sealed class DetailKey" not in all_kt_content:
-              shims.append('\n'.join([
-                  "package com.glassplayer.app",
-                  "",
-                  "sealed class DetailKey {",
-                  "    data object All : DetailKey()",
-                  "    data object Favorites : DetailKey()",
-                  "    data object Recent : DetailKey()",
-                  "    data object Newest : DetailKey()",
-                  "    data class Mix(val id: String) : DetailKey()",
-                  "}",
-                  ""
-              ]))
-
-          if "class SongActions" not in all_kt_content and "data class SongActions" not in all_kt_content:
-              shims.append('\n'.join([
-                  "package com.glassplayer.app.ui",
-                  "",
-                  "import com.glassplayer.app.data.Song",
-                  "",
-                  "data class SongActions(",
-                  "    val onToggleFav: (Song) -> Unit = {}",
-                  ")",
-                  ""
-              ]))
-
-          ui_helpers = []
-          if "val SubText" not in all_kt_content and "SubText =" not in all_kt_content:
-              ui_helpers.append("val SubText = Color(0xFFA0A0A0)")
-          if "fun Modifier.glass" not in all_kt_content:
-              ui_helpers.append('\n'.join([
-                  "fun Modifier.glass(shape: androidx.compose.ui.graphics.Shape, borderWidth: Float = 1f): Modifier =",
-                  "    this.clip(shape).background(Color.White.copy(alpha = 0.08f))"
-              ]))
-          if "fun GlassIconButton" not in all_kt_content:
-              ui_helpers.append('\n'.join([
-                  "@Composable",
-                  "fun GlassIconButton(",
-                  "    icon: androidx.compose.ui.graphics.vector.ImageVector,",
-                  "    contentDescription: String?,",
-                  "    onClick: () -> Unit,",
-                  "    modifier: Modifier = Modifier",
-                  ") {",
-                  "    androidx.compose.material3.IconButton(onClick = onClick, modifier = modifier) {",
-                  "        androidx.compose.material3.Icon(imageVector = icon, contentDescription = contentDescription, tint = Color.White)",
-                  "    }",
-                  "}"
-              ]))
-          if "fun ArtImage" not in all_kt_content:
-              ui_helpers.append('\n'.join([
-                  "@Composable",
-                  "fun ArtImage(",
-                  "    song: com.glassplayer.app.data.Song?,",
-                  "    modifier: Modifier = Modifier,",
-                  "    shape: androidx.compose.ui.graphics.Shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),",
-                  '    seed: String = "",',
-                  "    iconSize: androidx.compose.ui.unit.Dp = 24.dp",
-                  ") {",
-                  "    Box(",
-                  "        modifier = modifier.clip(shape).background(Color(0xFF222222)),",
-                  "        contentAlignment = Alignment.Center",
-                  "    ) {",
-                  "        if (iconSize > 2.dp) {",
-                  "            androidx.compose.material3.Icon(",
-                  "                imageVector = androidx.compose.material.icons.Icons.Rounded.MusicNote,",
-                  "                contentDescription = null,",
-                  "                tint = Color.White.copy(alpha = 0.6f),",
-                  "                modifier = Modifier.size(iconSize)",
-                  "            )",
-                  "        }",
-                  "    }",
-                  "}"
-              ]))
-          if "fun SongMenuDialog" not in all_kt_content:
-              ui_helpers.append('\n'.join([
-                  "@Composable",
-                  "fun SongMenuDialog(",
-                  "    song: com.glassplayer.app.data.Song,",
-                  "    isFavorite: Boolean,",
-                  "    actions: SongActions,",
-                  "    onDismiss: () -> Unit",
-                  ") {",
-                  "    androidx.compose.material3.AlertDialog(",
-                  "        onDismissRequest = onDismiss,",
-                  "        title = { androidx.compose.material3.Text(song.title) },",
-                  "        text = { androidx.compose.material3.Text(song.artist) },",
-                  "        confirmButton = {",
-                  "            androidx.compose.material3.TextButton(onClick = {",
-                  "                actions.onToggleFav(song)",
-                  "                onDismiss()",
-                  "            }) {",
-                  '                androidx.compose.material3.Text(if (isFavorite) "Hapus Favorit" else "Favorit")',
-                  "            }",
-                  "        }",
-                  "    )",
-                  "}"
-              ]))
-          if ui_helpers:
-              shims.append('\n'.join([
-                  "package com.glassplayer.app.ui",
-                  "",
-                  "import androidx.compose.foundation.background",
-                  "import androidx.compose.foundation.layout.Box",
-                  "import androidx.compose.foundation.layout.size",
-                  "import androidx.compose.runtime.Composable",
-                  "import androidx.compose.ui.Alignment",
-                  "import androidx.compose.ui.Modifier",
-                  "import androidx.compose.ui.draw.clip",
-                  "import androidx.compose.ui.graphics.Color",
-                  "import androidx.compose.ui.unit.dp",
-                  "",
-                  "\n\n".join(ui_helpers),
-                  ""
-              ]))
-
-          vm_exts = []
-          if "currentItem" not in all_kt_content:
-              vm_exts.append("val MusicViewModel.currentItem: kotlinx.coroutines.flow.StateFlow<MediaItemModel?>\n    get() = kotlinx.coroutines.flow.MutableStateFlow(null)")
-          if "isPlaying" not in all_kt_content:
-              vm_exts.append("val MusicViewModel.isPlaying: kotlinx.coroutines.flow.StateFlow<Boolean>\n    get() = kotlinx.coroutines.flow.MutableStateFlow(false)")
-          if "positionMs" not in all_kt_content:
-              vm_exts.append("val MusicViewModel.positionMs: kotlinx.coroutines.flow.StateFlow<Long>\n    get() = kotlinx.coroutines.flow.MutableStateFlow(0L)")
-          if "durationMs" not in all_kt_content:
-              vm_exts.append("val MusicViewModel.durationMs: kotlinx.coroutines.flow.StateFlow<Long>\n    get() = kotlinx.coroutines.flow.MutableStateFlow(0L)")
-          if "showLyrics" not in all_kt_content:
-              vm_exts.append("val MusicViewModel.showLyrics: kotlinx.coroutines.flow.StateFlow<Boolean>\n    get() = kotlinx.coroutines.flow.MutableStateFlow(false)")
-          if "currentLyrics" not in all_kt_content:
-              vm_exts.append('val MusicViewModel.currentLyrics: kotlinx.coroutines.flow.StateFlow<String>\n    get() = kotlinx.coroutines.flow.MutableStateFlow("")')
-          if "isLoadingLyrics" not in all_kt_content:
-              vm_exts.append("val MusicViewModel.isLoadingLyrics: kotlinx.coroutines.flow.StateFlow<Boolean>\n    get() = kotlinx.coroutines.flow.MutableStateFlow(false)")
-          if "videoMode" not in all_kt_content:
-              vm_exts.append("val MusicViewModel.videoMode: kotlinx.coroutines.flow.StateFlow<Boolean>\n    get() = kotlinx.coroutines.flow.MutableStateFlow(false)")
-          if "activeDownloads" not in all_kt_content:
-              vm_exts.append("data class DownloadProgressInfo(val progress: Float = 0f, val isCompleted: Boolean = false, val error: String? = null)\nval MusicViewModel.activeDownloads: kotlinx.coroutines.flow.StateFlow>\n    get() = kotlinx.coroutines.flow.MutableStateFlow(emptyMap())")
-          if "getPlayer(" not in all_kt_content:
-              vm_exts.append("fun MusicViewModel.getPlayer(): androidx.media3.common.Player? = null")
-          if "toggleVideoMode(" not in all_kt_content:
-              vm_exts.append("fun MusicViewModel.toggleVideoMode() {}")
-          if "downloadCurrentOrItem(" not in all_kt_content:
-              vm_exts.append("fun MusicViewModel.downloadCurrentOrItem(item: MediaItemModel, asVideo: Boolean = false) {}")
-          if "toggleLyrics(" not in all_kt_content:
-              vm_exts.append("fun MusicViewModel.toggleLyrics() {}")
-          if "seekTo(" not in all_kt_content:
-              vm_exts.append("fun MusicViewModel.seekTo(posMs: Long) {}")
-          if "skipPrevious(" not in all_kt_content:
-              vm_exts.append("fun MusicViewModel.skipPrevious() {}")
-          if "togglePlayPause(" not in all_kt_content:
-              vm_exts.append("fun MusicViewModel.togglePlayPause() {}")
-          if "skipNext(" not in all_kt_content:
-              vm_exts.append("fun MusicViewModel.skipNext() {}")
-          if "val favorites" not in all_kt_content and "var favorites" not in all_kt_content:
-              vm_exts.append("val MusicViewModel.favorites: List<String> get() = emptyList()")
-          if "val allSongs" not in all_kt_content and "var allSongs" not in all_kt_content:
-              vm_exts.append("val MusicViewModel.allSongs: List<com.glassplayer.app.data.Song> get() = emptyList()")
-          if "val recents" not in all_kt_content and "var recents" not in all_kt_content:
-              vm_exts.append("val MusicViewModel.recents: List<String> get() = emptyList()")
-          if "playCountsVersion" not in all_kt_content:
-              vm_exts.append("val MusicViewModel.playCountsVersion: Int get() = 0")
-          if "currentId" not in all_kt_content:
-              vm_exts.append("val MusicViewModel.currentId: String? get() = null")
-          if "fun songsOf(" not in all_kt_content:
-              vm_exts.append("fun MusicViewModel.songsOf(ids: List<String>): List<com.glassplayer.app.data.Song> = emptyList()")
-          if "fun listFor(" not in all_kt_content:
-              vm_exts.append("fun MusicViewModel.listFor(key: DetailKey): List<com.glassplayer.app.data.Song> = emptyList()")
-          if "fun popular(" not in all_kt_content:
-              vm_exts.append("fun MusicViewModel.popular(limit: Int): List<com.glassplayer.app.data.Song> = emptyList()")
-          if "fun shuffleAll(" not in all_kt_content:
-              vm_exts.append("fun MusicViewModel.shuffleAll(songs: List<com.glassplayer.app.data.Song>) {}")
-          if "fun playList(" not in all_kt_content:
-              vm_exts.append("fun MusicViewModel.playList(songs: List<com.glassplayer.app.data.Song>, index: Int) {}")
-
-          if vm_exts:
-              shims.append("package com.glassplayer.app\n\n" + "\n".join(vm_exts) + "\n")
-
-          if "object YouTubeDownloader" not in all_kt_content:
-              shims.append('\n'.join([
-                  "package com.glassplayer.app.download",
-                  "",
-                  "object YouTubeDownloader {",
-                  "    fun isDownloaded(videoId: String): Boolean = false",
-                  "}",
-                  ""
-              ]))
-
-          if "fun LyricsOverlay" not in all_kt_content:
-              shims.append('\n'.join([
-                  "package com.glassplayer.app.lyrics",
-                  "",
-                  "import androidx.compose.material3.Text",
-                  "import androidx.compose.runtime.Composable",
-                  "",
-                  "@Composable",
-                  "fun LyricsOverlay(",
-                  "    lyrics: String,",
-                  "    isLoading: Boolean,",
-                  "    positionMs: Long,",
-                  "    onSeek: (Long) -> Unit",
-                  ") {",
-                  '    Text(if (isLoading) "Memuat lirik..." else lyrics.ifBlank { "Lirik tidak tersedia" })',
-                  "}",
-                  ""
-              ]))
-
-          if "object YouTubeStreamEngine" not in all_kt_content:
-              shims.append('\n'.join([
-                  "package com.glassplayer.app.youtube",
-                  "",
-                  "data class YtSearchItem(",
-                  "    val url: String? = null,",
-                  "    val name: String? = null,",
-                  "    val uploaderName: String? = null,",
-                  "    val duration: Long = 0L,",
-                  "    val thumbnails: List<YtThumb> = emptyList()",
-                  ")",
-                  "",
-                  "data class YtThumb(",
-                  '    val url: String = "",',
-                  "    val width: Int = 0",
-                  ")",
-                  "",
-                  "object YouTubeStreamEngine {",
-                  "    suspend fun search(query: String, videosOnly: Boolean = false): List<YtSearchItem> = emptyList()",
-                  "    fun buildUriString(videoId: String, isVideo: Boolean = false): String =",
-                  '        if (isVideo) "https://www.youtube.com/watch?v=$videoId" else "https://music.youtube.com/watch?v=$videoId"',
-                  "}",
-                  ""
-              ]))
-
-          if shims:
-              with open(f"app/src/main/java/{pkg_path}/CompatShims.kt", "w", encoding="utf-8") as f:
-                  f.write("\n".join(shims))
 
           if os.path.exists("AndroidManifest.xml"):
               shutil.copy("AndroidManifest.xml", "app/src/main/AndroidManifest.xml")
@@ -350,102 +86,45 @@ jobs:
                   shutil.copy(res_file, f"app/src/main/res/drawable/{res_file}")
           EOF
 
-      - name: Configure Gradle Root & App Module
+      - name: Ensure Gradle Build Configuration Exists
         run: |
           python3 - << 'EOF'
-          import os, re, shutil
+          import os, shutil
 
-          settings_path = "settings.gradle.kts" if os.path.exists("settings.gradle.kts") else ("settings.gradle" if os.path.exists("settings.gradle") else "settings.gradle.kts")
-
-          if os.path.exists(settings_path):
-              with open(settings_path, "r", encoding="utf-8") as f:
-                  s_content = f.read()
-              if 'include(":app")' not in s_content and "include(':app')" not in s_content and 'include ":app"' not in s_content:
-                  with open(settings_path, "a", encoding="utf-8") as f:
-                      f.write('\ninclude(":app")\n')
-          else:
+          if not os.path.exists("settings.gradle.kts") and not os.path.exists("settings.gradle"):
               with open("settings.gradle.kts", "w", encoding="utf-8") as f:
-                  f.write('\n'.join([
-                      "pluginManagement {",
-                      "    repositories {",
-                      "        google()",
-                      "        mavenCentral()",
-                      "        gradlePluginPortal()",
-                      "    }",
-                      "}",
-                      "dependencyResolutionManagement {",
-                      "    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)",
-                      "    repositories {",
-                      "        google()",
-                      "        mavenCentral()",
-                      '        maven { url = uri("https://jitpack.io") }',
-                      "    }",
-                      "}",
-                      'rootProject.name = "GlassPlayer"',
-                      'include(":app")',
-                      ""
-                  ]))
+                  f.write("""pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+                  maven { url = uri("https://jitpack.io") }
+              }
+          }
+          rootProject.name = "Musix1"
+          include(":app")
+          """)
 
           if not os.path.exists("gradle.properties"):
               with open("gradle.properties", "w", encoding="utf-8") as f:
-                  f.write('\n'.join([
-                      "org.gradle.jvmargs=-Xmx3072m -Dfile.encoding=UTF-8",
-                      "android.useAndroidX=true",
-                      "kotlin.code.style=official",
-                      "android.nonTransitiveRClass=true",
-                      ""
-                  ]))
+                  f.write("""org.gradle.jvmargs=-Xmx3072m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          android.nonTransitiveRClass=true
+          """)
 
           os.makedirs("app", exist_ok=True)
-          if os.path.exists("build.gradle.kts"):
-              with open("build.gradle.kts", "r", encoding="utf-8") as src:
-                  root_content = src.read()
-              if "apply false" not in root_content:
-                  if not os.path.exists("app/build.gradle.kts"):
-                      shutil.copy("build.gradle.kts", "app/build.gradle.kts")
-                  with open("build.gradle.kts", "w", encoding="utf-8") as f:
-                      f.write('\n'.join([
-                          "plugins {",
-                          '    id("com.android.application") version "8.6.0" apply false',
-                          '    id("org.jetbrains.kotlin.android") version "2.0.20" apply false',
-                          '    id("org.jetbrains.kotlin.plugin.compose") version "2.0.20" apply false',
-                          "}",
-                          ""
-                      ]))
-
-          if os.path.exists("app/build.gradle.kts"):
-              with open("app/build.gradle.kts", "r", encoding="utf-8") as f:
-                  app_gradle = f.read()
-              extra_deps = []
-              if "coil-compose" not in app_gradle:
-                  extra_deps.append('    implementation("io.coil-kt:coil-compose:2.7.0")')
-              if "kotlinx-coroutines-android" not in app_gradle:
-                  extra_deps.append('    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")')
-              if "okhttp3:okhttp" not in app_gradle:
-                  extra_deps.append('    implementation("com.squareup.okhttp3:okhttp:4.12.0")')
-              if extra_deps:
-                  addition = "\n" + "\n".join(extra_deps) + "\n"
-                  m = re.search(r'\ndependencies\s*\{', app_gradle)
-                  if m:
-                      idx = m.end()
-                      app_gradle = app_gradle[:idx] + addition + app_gradle[idx:]
-                      with open("app/build.gradle.kts", "w", encoding="utf-8") as f:
-                          f.write(app_gradle)
+          if not os.path.exists("app/build.gradle.kts") and not os.path.exists("app/build.gradle"):
+              if os.path.exists("build.gradle.kts"):
+                  shutil.copy("build.gradle.kts", "app/build.gradle.kts")
           EOF
-
-          if [ ! -f "app/musix.keystore" ] && [ ! -f "musix.keystore" ]; then
-            keytool -genkeypair -v \
-              -keystore app/musix.keystore \
-              -storepass musix123 \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -alias musix \
-              -keypass musix123 \
-              -dname "CN=Musix, OU=Dev, O=GlassPlayer, L=ID, S=ID, C=ID"
-          elif [ -f "musix.keystore" ] && [ ! -f "app/musix.keystore" ]; then
-            cp musix.keystore app/musix.keystore
-          fi
 
       - name: Initialize Gradle Wrapper & Build Debug APK
         run: |
@@ -459,4 +138,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Musix1-Debug-APK
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
