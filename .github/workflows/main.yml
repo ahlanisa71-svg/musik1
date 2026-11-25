@@ -140,7 +140,7 @@ jobs:
                   versionCode = 21
                   versionName = "1.9.12"
                   val repo = System.getenv("GITHUB_REPOSITORY") ?: "ahlanisa71-svg/Musik"
-                  buildConfigField("String", "UPDATE_REPO", "\"$repo\"")
+                  buildConfigField("String", "UPDATE_REPO", "\\"$repo\\"")
               }
 
               signingConfigs {
