@@ -69,7 +69,10 @@ jobs:
 
                   if "<resources" in xml_content:
                       shutil.copy(res_file, f"app/src/main/res/values/{res_file}")
-                  elif "<appwidget-provider" in xml_content or "<network-security-config" in xml_content or "<paths" in xml_content or "<data-extraction-rules" in xml_content or "<full-backup-content" in xml_content:
+                  elif any(tag in xml_content for tag in [
+                      "<appwidget-provider", "<network-security-config",
+                      "<paths", "<data-extraction-rules", "<full-backup-content"
+                  ]):
                       shutil.copy(res_file, f"app/src/main/res/xml/{res_file}")
                   elif "<adaptive-icon" in xml_content:
                       shutil.copy(res_file, f"app/src/main/res/mipmap-anydpi-v26/{res_file}")
@@ -86,14 +89,13 @@ jobs:
                   shutil.copy(res_file, f"app/src/main/res/drawable/{res_file}")
           EOF
 
-      - name: Ensure Gradle Build Configuration Exists
+      - name: Configure Root & App Gradle Files
         run: |
           python3 - << 'EOF'
-          import os, shutil
+          import os, re, shutil
 
-          if not os.path.exists("settings.gradle.kts") and not os.path.exists("settings.gradle"):
-              with open("settings.gradle.kts", "w", encoding="utf-8") as f:
-                  f.write("""pluginManagement {
+          with open("settings.gradle.kts", "w", encoding="utf-8") as f:
+              f.write('''pluginManagement {
               repositories {
                   google()
                   mavenCentral()
@@ -110,20 +112,47 @@ jobs:
           }
           rootProject.name = "Musix1"
           include(":app")
-          """)
+          ''')
 
-          if not os.path.exists("gradle.properties"):
-              with open("gradle.properties", "w", encoding="utf-8") as f:
-                  f.write("""org.gradle.jvmargs=-Xmx3072m -Dfile.encoding=UTF-8
+          with open("gradle.properties", "w", encoding="utf-8") as f:
+              f.write('''org.gradle.jvmargs=-Xmx3072m -Dfile.encoding=UTF-8
           android.useAndroidX=true
           kotlin.code.style=official
           android.nonTransitiveRClass=true
-          """)
+          ''')
 
           os.makedirs("app", exist_ok=True)
-          if not os.path.exists("app/build.gradle.kts") and not os.path.exists("app/build.gradle"):
-              if os.path.exists("build.gradle.kts"):
+          if os.path.exists("build.gradle.kts"):
+              with open("build.gradle.kts", "r", encoding="utf-8") as src:
+                  orig_gradle = src.read()
+              if "apply false" not in orig_gradle:
                   shutil.copy("build.gradle.kts", "app/build.gradle.kts")
+                  with open("build.gradle.kts", "w", encoding="utf-8") as f:
+                      f.write('''plugins {
+              id("com.android.application") version "8.6.0" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.20" apply false
+              id("org.jetbrains.kotlin.plugin.compose") version "2.0.20" apply false
+          }
+          ''')
+
+          if os.path.exists("app/build.gradle.kts"):
+              with open("app/build.gradle.kts", "r", encoding="utf-8") as f:
+                  app_gradle = f.read()
+              extra_deps = []
+              if "coil-compose" not in app_gradle:
+                  extra_deps.append('    implementation("io.coil-kt:coil-compose:2.7.0")')
+              if "kotlinx-coroutines-android" not in app_gradle:
+                  extra_deps.append('    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")')
+              if "okhttp3:okhttp" not in app_gradle:
+                  extra_deps.append('    implementation("com.squareup.okhttp3:okhttp:4.12.0")')
+              if extra_deps:
+                  addition = "\n" + "\n".join(extra_deps) + "\n"
+                  m = re.search(r'\ndependencies\s*\{', app_gradle)
+                  if m:
+                      idx = m.end()
+                      app_gradle = app_gradle[:idx] + addition + app_gradle[idx:]
+                      with open("app/build.gradle.kts", "w", encoding="utf-8") as f:
+                          f.write(app_gradle)
           EOF
 
       - name: Initialize Gradle Wrapper & Build Debug APK
@@ -138,4 +167,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Musix1-Debug-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/*.apk
