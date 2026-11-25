@@ -37,6 +37,8 @@ jobs:
           os.makedirs(f"app/src/main/java/{pkg_path}", exist_ok=True)
           os.makedirs("app/src/main/res/values", exist_ok=True)
           os.makedirs("app/src/main/res/drawable", exist_ok=True)
+          os.makedirs("app/src/main/res/layout", exist_ok=True)
+          os.makedirs("app/src/main/res/xml", exist_ok=True)
           os.makedirs("app/src/main/res/mipmap-anydpi-v26", exist_ok=True)
           os.makedirs("gradle/wrapper", exist_ok=True)
 
@@ -62,8 +64,22 @@ jobs:
               if not os.path.isfile(res_file) or res_file == "AndroidManifest.xml":
                   continue
               if res_file.endswith(".xml"):
-                  if any(k in res_file for k in ["strings", "themes", "colors", "styles", "attrs"]):
+                  with open(res_file, "r", encoding="utf-8", errors="ignore") as f:
+                      xml_content = f.read()
+
+                  if "<resources" in xml_content:
                       shutil.copy(res_file, f"app/src/main/res/values/{res_file}")
+                  elif "<appwidget-provider" in xml_content or "<network-security-config" in xml_content or "<paths" in xml_content or "<data-extraction-rules" in xml_content or "<full-backup-content" in xml_content:
+                      shutil.copy(res_file, f"app/src/main/res/xml/{res_file}")
+                  elif "<adaptive-icon" in xml_content:
+                      shutil.copy(res_file, f"app/src/main/res/mipmap-anydpi-v26/{res_file}")
+                  elif any(tag in xml_content for tag in [
+                      "<LinearLayout", "<RelativeLayout", "<FrameLayout",
+                      "<ConstraintLayout", "<CoordinatorLayout", "<ScrollView",
+                      "<TextView", "<ImageView", "<Button", "<ImageButton",
+                      "<RemoteViews", "<merge", "<androidx.", "<com."
+                  ]):
+                      shutil.copy(res_file, f"app/src/main/res/layout/{res_file}")
                   else:
                       shutil.copy(res_file, f"app/src/main/res/drawable/{res_file}")
               elif res_file.endswith((".png", ".jpg", ".jpeg", ".webp")):
