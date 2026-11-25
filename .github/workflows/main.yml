@@ -35,6 +35,7 @@ jobs:
           pkg_path = pkg.replace(".", "/")
 
           os.makedirs(f"app/src/main/java/{pkg_path}", exist_ok=True)
+          os.makedirs(f"app/src/main/java/{pkg_path}/data", exist_ok=True)
           os.makedirs("app/src/main/res/values", exist_ok=True)
           os.makedirs("app/src/main/res/drawable", exist_ok=True)
           os.makedirs("app/src/main/res/layout", exist_ok=True)
@@ -47,15 +48,34 @@ jobs:
                   os.makedirs("app/src/main/assets", exist_ok=True)
                   shutil.copy(doc, f"app/src/main/assets/{doc}")
 
+          has_song_decl = False
           for fname in os.listdir("."):
               if fname.endswith(".kt") and os.path.isfile(fname):
                   with open(fname, "r", encoding="utf-8") as f:
                       content = f.read()
+                  if re.search(r'\b(data\s+class|class|interface|object)\s+Song\b', content):
+                      has_song_decl = True
                   m = re.search(r'^\s*package\s+([\w\.]+)', content, re.MULTILINE)
                   target_pkg = m.group(1) if m else pkg
                   target_dir = f"app/src/main/java/{target_pkg.replace('.', '/')}"
                   os.makedirs(target_dir, exist_ok=True)
                   shutil.copy(fname, os.path.join(target_dir, fname))
+
+          if not has_song_decl:
+              song_file = f"app/src/main/java/{pkg_path}/data/Song.kt"
+              with open(song_file, "w", encoding="utf-8") as f:
+                  f.write("""package com.glassplayer.app.data
+
+data class Song(
+    val id: String = "",
+    val title: String = "",
+    val artist: String = "",
+    val album: String = "",
+    val duration: Long = 0L,
+    val streamUrl: String = "",
+    val artworkUrl: String = ""
+)
+""")
 
           if os.path.exists("AndroidManifest.xml"):
               shutil.copy("AndroidManifest.xml", "app/src/main/AndroidManifest.xml")
