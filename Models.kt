@@ -1,40 +1,38 @@
-package com.glassplayer.app.data
+package com.glassplayer.app
 
-import android.content.ContentUris
 import android.net.Uri
-import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
 
-data class Song(
-    val id: Long,
-    val uri: String,
+enum class MediaType {
+    LOCAL_AUDIO,
+    LOCAL_VIDEO,
+    YOUTUBE_SONG,
+    YOUTUBE_VIDEO
+}
+
+data class MediaItemModel(
+    val id: String,
     val title: String,
     val artist: String,
-    val album: String,
-    val albumId: Long,
-    val durationMs: Long,
-    val dateAdded: Long,
-    val folder: String = "",
-    val path: String = "",
-)
+    val album: String = "",
+    val durationMs: Long = 0L,
+    val uri: Uri,
+    val artworkUri: Uri? = null,
+    val mediaType: MediaType = MediaType.LOCAL_AUDIO,
+    val youtubeVideoId: String? = null,
+    val isDownloaded: Boolean = false
+) {
+    val isYouTube: Boolean
+        get() = mediaType == MediaType.YOUTUBE_SONG || mediaType == MediaType.YOUTUBE_VIDEO
 
-fun Song.artworkUri(): Uri? =
-    if (albumId > 0) ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId)
-    else null
+    val isVideoCapable: Boolean
+        get() = mediaType == MediaType.LOCAL_VIDEO ||
+                mediaType == MediaType.YOUTUBE_SONG ||
+                mediaType == MediaType.YOUTUBE_VIDEO
+}
 
-fun Song.toMediaItem(): MediaItem {
-    val u = Uri.parse(uri)
-    return MediaItem.Builder()
-        .setMediaId(uri)
-        .setUri(u)
-        .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(u).build())
-        .setMediaMetadata(
-            MediaMetadata.Builder()
-                .setTitle(title)
-                .setArtist(artist)
-                .setAlbumTitle(album)
-                .setArtworkUri(artworkUri())
-                .build()
-        )
-        .build()
+enum class AppTab(val label: String) {
+    SONGS("Songs"),
+    VIDEOS("Videos"),
+    ONLINE("Online"),
+    DOWNLOADS("Downloads")
 }

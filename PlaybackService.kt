@@ -1,202 +1,76 @@
 package com.glassplayer.app
 
-import android.app.PendingIntent
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import androidx.core.content.ContextCompat
-import com.glassplayer.app.data.AudioFx
-import com.glassplayer.app.data.Store
-import com.glassplayer.app.widget.WidgetUpdater
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
-import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
+import android.net.Uri
+import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
-import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import androidx.media3.session.SessionCommand
-import androidx.media3.session.SessionResult
-import com.google.common.util.concurrent.Futures
-import com.google.common.util.concurrent.ListenableFuture
+import com.glassplayer.app.download.YouTubeDownloader
+import com.glassplayer.app.youtube.YouTubeStreamEngine
+import kotlinx.coroutines.runBlocking
 
-const val CMD_SLEEP = "com.glassplayer.app.SLEEP"
-
-/**
- * Service pemutar: tetap berjalan di latar belakang, menampilkan notifikasi media
- * dan kontrol di layar kunci (lock screen) melalui MediaSession.
- */
 class PlaybackService : MediaSessionService() {
 
-    private var session: MediaSession? = null
-    private val handler = Handler(Looper.getMainLooper())
-    private val sleepRunnable = Runnable { session?.player?.pause() }
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private val widgetRunnable = Runnable {
-        val p = session?.player ?: return@Runnable
-        val st = Store(this)
-        val md = p.mediaMetadata
-        st.widgetTitle = md.title?.toString() ?: ""
-        st.widgetArtist = md.artist?.toString() ?: ""
-        st.widgetUri = p.currentMediaItem?.mediaId ?: ""
-        st.widgetPlaying = p.isPlaying
-        scope.launch { WidgetUpdater.refresh(applicationContext) }
-    }
-    private fun scheduleWidget() {
-        handler.removeCallbacks(widgetRunnable)
-        handler.postDelayed(widgetRunnable, 300)
-    }
-    private val store by lazy { Store(this) }
+    private var mediaSession: MediaSession? = null
 
-    // Transisi memudar antar lagu (crossfade): volume turun di ujung lagu & naik di awal lagu berikutnya.
-    private val fadeRunnable = object : Runnable {
-        override fun run() {
-            val p = session?.player
-            val cfMs = store.crossfadeSec * 1000L
-            if (p != null) {
-                var vol = 1f
-                if (cfMs > 0 && p.isPlaying) {
-                    val dur = p.duration
-                    val pos = p.currentPosition
-                    if (dur != C.TIME_UNSET && dur > cfMs * 2) {
-                        val rem = dur - pos
-                        if (rem < cfMs) vol = (rem.toFloat() / cfMs).coerceIn(0f, 1f)
-                        else if (pos < cfMs) vol = (pos.toFloat() / cfMs).coerceIn(0.05f, 1f)
-                    }
-                }
-                if (Math.abs(p.volume - vol) > 0.01f) p.volume = vol
-            }
-            handler.postDelayed(this, if (cfMs > 0) 100L else 1000L)
-        }
-    }
-
-    private val widgetListener = object : Player.Listener {
-        override fun onAudioSessionIdChanged(audioSessionId: Int) {
-            AudioFx.attach(audioSessionId)
-        }
-        override fun onIsPlayingChanged(isPlaying: Boolean) = scheduleWidget()
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = scheduleWidget()
-    }
-
-    private val callback = object : MediaSession.Callback {
-        override fun onConnect(
-            session: MediaSession,
-            controller: MediaSession.ControllerInfo,
-        ): MediaSession.ConnectionResult {
-            val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
-                .add(SessionCommand(CMD_SLEEP, Bundle.EMPTY))
-                .build()
-            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
-                .setAvailableSessionCommands(commands)
-                .build()
-        }
-
-        override fun onCustomCommand(
-            session: MediaSession,
-            controller: MediaSession.ControllerInfo,
-            customCommand: SessionCommand,
-            args: Bundle,
-        ): ListenableFuture<SessionResult> {
-            if (customCommand.customAction == CMD_SLEEP) {
-                handler.removeCallbacks(sleepRunnable)
-                val minutes = args.getInt("min", 0)
-                if (minutes > 0) handler.postDelayed(sleepRunnable, minutes * 60_000L)
-            }
-            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
-        }
-    }
-
-    // Saat layar mati dan musik sedang jalan, tampilkan layar kunci kaca (jika diaktifkan).
-    private val screenOffReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            val p = session?.player ?: return
-            if (!p.isPlaying || !Store(context).lockScreenEnabled) return
-            try {
-                context.startActivity(
-                    Intent(context, LockScreenActivity::class.java).addFlags(
-                        Intent.FLAG_ACTIVITY_NEW_TASK or
-                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                            Intent.FLAG_ACTIVITY_NO_ANIMATION
-                    )
-                )
-            } catch (_: Exception) {
-            }
-        }
-    }
-
+    @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
-        ContextCompat.registerReceiver(
-            this, screenOffReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF),
-            ContextCompat.RECEIVER_NOT_EXPORTED,
-        )
 
-        // Ekstraktor lengkap + seek akurat untuk MP3 dengan bitrate konstan (CBR).
-        val extractors = DefaultExtractorsFactory().setConstantBitrateSeekingEnabled(true)
+        val upstreamFactory = DefaultDataSource.Factory(this)
+        val resolvingFactory = ResolvingDataSource.Factory(upstreamFactory) { dataSpec: DataSpec ->
+            val rawUri = dataSpec.uri.toString()
+            val videoId = YouTubeStreamEngine.extractVideoId(rawUri)
+            if (videoId != null) {
+                val localFile = YouTubeDownloader.getDownloadedFile(videoId)
+                if (localFile != null && localFile.exists()) {
+                    return@Factory dataSpec.withUri(Uri.fromFile(localFile))
+                }
 
-        val player = ExoPlayer.Builder(this, DefaultMediaSourceFactory(this, extractors))
-            .setRenderersFactory(
-                DefaultRenderersFactory(this)
-                    .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
-            )
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-                /* handleAudioFocus = */ true,
-            )
-            .setHandleAudioBecomingNoisy(true)      // jeda otomatis saat headset dicabut
-            .setWakeMode(C.WAKE_MODE_LOCAL)          // CPU tetap hidup saat layar mati
+                val resolved = runBlocking { YouTubeStreamEngine.resolve(videoId) }
+                val targetUrl = if (YouTubeStreamEngine.videoMode.value && !resolved.videoUrl.isNullOrBlank()) {
+                    resolved.videoUrl
+                } else {
+                    resolved.audioUrl
+                }
+                dataSpec.withUri(Uri.parse(targetUrl))
+            } else {
+                dataSpec
+            }
+        }
+
+        val audioAttributes = AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
 
-        val openApp = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-
-        player.addListener(widgetListener)
-        AudioFx.load(this)
-        AudioFx.attach(player.audioSessionId)
-        handler.post(fadeRunnable)
-        session = MediaSession.Builder(this, player)
-            .setCallback(callback)
-            .setSessionActivity(openApp)
+        val player = ExoPlayer.Builder(this)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(resolvingFactory))
+            .setAudioAttributes(audioAttributes, true)
+            .setHandleAudioBecomingNoisy(true)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
+
+        mediaSession = MediaSession.Builder(this, player).build()
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
-
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        // Geser app dari recent apps: lanjut main jika sedang memutar, kalau tidak matikan service.
-        val p = session?.player
-        if (p == null || !p.playWhenReady || p.mediaItemCount == 0) stopSelf()
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
+        return mediaSession
     }
 
     override fun onDestroy() {
-        handler.removeCallbacks(sleepRunnable)
-        handler.removeCallbacks(widgetRunnable)
-        handler.removeCallbacks(fadeRunnable)
-        AudioFx.release()
-        scope.cancel()
-        try { unregisterReceiver(screenOffReceiver) } catch (_: Exception) {}
-        session?.run {
+        mediaSession?.run {
             player.release()
             release()
+            mediaSession = null
         }
-        session = null
         super.onDestroy()
     }
 }

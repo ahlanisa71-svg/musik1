@@ -2,667 +2,347 @@ package com.glassplayer.app
 
 import android.app.Application
 import android.content.ComponentName
-import android.content.Intent
+import android.content.ContentUris
 import android.net.Uri
-import android.os.Bundle
-import com.glassplayer.app.ui.TrToast as Toast
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.core.content.ContextCompat
+import android.provider.MediaStore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
-import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
-import com.glassplayer.app.data.MediaRepository
-import com.glassplayer.app.data.Song
-import com.glassplayer.app.data.Store
-import com.glassplayer.app.data.UNKNOWN_ARTIST
-import com.glassplayer.app.data.toMediaItem
-import com.glassplayer.app.widget.WidgetUpdater
+import com.glassplayer.app.download.DownloadTaskState
+import com.glassplayer.app.download.YouTubeDownloader
+import com.glassplayer.app.lyrics.LyricsDocument
+import com.glassplayer.app.lyrics.LyricsEngine
+import com.glassplayer.app.youtube.YouTubeStreamEngine
+import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.random.Random
 
-sealed interface DetailKey {
-    data object Recent : DetailKey
-    data object Newest : DetailKey
-    data object All : DetailKey
-    data object Favorites : DetailKey
-    data class Playlist(val name: String) : DetailKey
-    data class Album(val name: String) : DetailKey
-    data class Artist(val name: String) : DetailKey
-    data class Folder(val name: String) : DetailKey
-    data object Downloads : DetailKey
-    /** Campuran berdasarkan durasi: "short", "mid", "long". */
-    data class Mix(val id: String) : DetailKey
-}
-
-class MusicViewModel(app: Application) : AndroidViewModel(app) {
-
-    private val store = Store(app)
-
-    // ---- Library state ----
-    var allSongs by mutableStateOf<List<Song>>(emptyList())
-        private set
-    var songs by mutableStateOf<List<Song>>(emptyList())
-        private set
-    private var byUri by mutableStateOf<Map<String, Song>>(emptyMap())
-    private val external = LinkedHashMap<String, Song>()
-
-    var favorites by mutableStateOf(store.loadList("fav"))
-        private set
-    var recents by mutableStateOf(store.loadList("recent"))
-        private set
-    var playlists by mutableStateOf(store.loadPlaylists())
-        private set
-    var sortMode by mutableIntStateOf(store.sortMode)
-        private set
-    var loading by mutableStateOf(false)
-        private set
-
-    val sortLabel: String get() = when (sortMode) { 0 -> "A–Z"; 1 -> "Terbaru"; else -> "Artis" }
-
-    // ---- Player state ----
-    var isPlaying by mutableStateOf(false)
-        private set
-    var currentId by mutableStateOf<String?>(null)
-        private set
-    var positionMs by mutableLongStateOf(0L)
-        private set
-    var durationMs by mutableLongStateOf(0L)
-        private set
-    var shuffle by mutableStateOf(false)
-        private set
-    var repeatMode by mutableIntStateOf(Player.REPEAT_MODE_OFF)
-        private set
-    var sleepEndsAt by mutableLongStateOf(0L)
-        private set
-
-    // Antrian putar
-    var queueIds by mutableStateOf<List<String>>(emptyList())
-        private set
-    var queueIndex by mutableIntStateOf(0)
-        private set
-
-    // Gaya pemutar (0 Bawaan, 1 Vinyl modern, 2 Vinyl klasik, 3 CD, 4 Kaset)
-    var playerStyle by mutableIntStateOf(store.playerStyle)
-        private set
-
-    // Permintaan dari widget / notifikasi
-    var pendingTab by mutableStateOf<Int?>(null)
-    var pendingDelete by mutableStateOf<List<Song>?>(null)
-        private set
-
-    // Cadangan info lagu dari metadata MediaItem (dipakai layar kunci tanpa memindai ulang pustaka).
-    private var metaSong by mutableStateOf<Song?>(null)
-    var lockScreenEnabled by mutableStateOf(store.lockScreenEnabled)
-        private set
-
-    val currentSong: Song? get() = currentId?.let { byUri[it] } ?: metaSong
-    val progress: Float
-        get() = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
-
-    fun songFor(uri: String): Song? = byUri[uri] ?: metaSong?.takeIf { it.uri == uri }
-
-    fun setLockScreen(on: Boolean) {
-        lockScreenEnabled = on
-        store.lockScreenEnabled = on
-    }
-
-    var playbackSpeed by mutableFloatStateOf(store.speed)
-    var crossfadeSec by mutableIntStateOf(store.crossfadeSec)
-
-    fun setSpeed(v: Float) {
-        playbackSpeed = v
-        store.speed = v
-        controller?.setPlaybackSpeed(v)
-    }
-
-    fun setCrossfade(sec: Int) {
-        crossfadeSec = sec
-        store.crossfadeSec = sec
-    }
-
-    fun pauseIfPlaying() { controller?.pause() }
-
-    fun applyPlayerStyle(i: Int) {
-        playerStyle = i
-        store.playerStyle = i
-    }
+class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     private var controller: MediaController? = null
-    private var pendingExternal: Uri? = null
-    private var pendingPlayUri: String? = null
-    private var wantShuffleAll = false
-    private var loadJob: Job? = null
-    private var loadedOnce = false
+
+    private val _selectedTab = MutableStateFlow(AppTab.SONGS)
+    val selectedTab: StateFlow<AppTab> = _selectedTab.asStateFlow()
+
+    private val _localSongs = MutableStateFlow<List<MediaItemModel>>(emptyList())
+    val localSongs: StateFlow<List<MediaItemModel>> = _localSongs.asStateFlow()
+
+    private val _localVideos = MutableStateFlow<List<MediaItemModel>>(emptyList())
+    val localVideos: StateFlow<List<MediaItemModel>> = _localVideos.asStateFlow()
+
+    private val _downloadedItems = MutableStateFlow<List<MediaItemModel>>(emptyList())
+    val downloadedItems: StateFlow<List<MediaItemModel>> = _downloadedItems.asStateFlow()
+
+    private val _onlineResults = MutableStateFlow<List<MediaItemModel>>(emptyList())
+    val onlineResults: StateFlow<List<MediaItemModel>> = _onlineResults.asStateFlow()
+
+    private val _isSearchingOnline = MutableStateFlow(false)
+    val isSearchingOnline: StateFlow<Boolean> = _isSearchingOnline.asStateFlow()
+
+    private val _searchVideosOnly = MutableStateFlow(false)
+    val searchVideosOnly: StateFlow<Boolean> = _searchVideosOnly.asStateFlow()
+
+    private val _currentItem = MutableStateFlow<MediaItemModel?>(null)
+    val currentItem: StateFlow<MediaItemModel?> = _currentItem.asStateFlow()
+
+    private val _isPlaying = MutableStateFlow(false)
+    val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
+
+    private val _positionMs = MutableStateFlow(0L)
+    val positionMs: StateFlow<Long> = _positionMs.asStateFlow()
+
+    private val _durationMs = MutableStateFlow(0L)
+    val durationMs: StateFlow<Long> = _durationMs.asStateFlow()
+
+    private val _showLyrics = MutableStateFlow(false)
+    val showLyrics: StateFlow<Boolean> = _showLyrics.asStateFlow()
+
+    private val _currentLyrics = MutableStateFlow<LyricsDocument?>(null)
+    val currentLyrics: StateFlow<LyricsDocument?> = _currentLyrics.asStateFlow()
+
+    private val _isLoadingLyrics = MutableStateFlow(false)
+    val isLoadingLyrics: StateFlow<Boolean> = _isLoadingLyrics.asStateFlow()
+
+    val videoMode: StateFlow<Boolean> = YouTubeStreamEngine.videoMode
+    val activeDownloads: StateFlow<Map<String, DownloadTaskState>> = YouTubeDownloader.activeDownloads
 
     init {
-        connect()
-        viewModelScope.launch {
-            while (isActive) {
-                controller?.let { c ->
-                    positionMs = c.currentPosition.coerceAtLeast(0L)
-                    val d = c.duration
-                    durationMs = if (d == C.TIME_UNSET || d <= 0) (currentSong?.durationMs ?: 0L) else d
-                }
-                if (sleepEndsAt != 0L && System.currentTimeMillis() > sleepEndsAt) sleepEndsAt = 0L
-                delay(400)
-            }
-        }
+        connectPlayer()
+        refreshLibrary()
+        startPositionTicker()
     }
 
-    // ---------- Koneksi ke PlaybackService ----------
-    private fun connect() {
-        val app = getApplication<Application>()
-        val token = SessionToken(app, ComponentName(app, PlaybackService::class.java))
-        val future = MediaController.Builder(app, token).buildAsync()
+    fun getPlayer(): Player? = controller
+
+    private fun connectPlayer() {
+        val context = getApplication<Application>()
+        val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
+        val future = MediaController.Builder(context, token).buildAsync()
         future.addListener({
-            val c = try { future.get() } catch (_: Exception) { return@addListener }
-            controller = c
-            c.setPlaybackSpeed(playbackSpeed)
-            c.addListener(object : Player.Listener {
-                override fun onEvents(player: Player, events: Player.Events) =
-                    sync(c, events.contains(Player.EVENT_TIMELINE_CHANGED))
+            val mc = future.get()
+            controller = mc
+            mc.addListener(object : Player.Listener {
+                override fun onIsPlayingChanged(playing: Boolean) {
+                    _isPlaying.value = playing
+                }
 
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                    mediaItem?.mediaId?.takeIf { it.isNotEmpty() }?.let { markRecent(it) }
+                    val id = mediaItem?.mediaId ?: return
+                    val matched = findItemById(id)
+                    if (matched != null && matched.id != _currentItem.value?.id) {
+                        _currentItem.value = matched
+                        loadLyricsFor(matched)
+                    }
                 }
             })
-            sync(c, true)
-            flushPending()
-            flushActions()
-        }, ContextCompat.getMainExecutor(app))
+        }, MoreExecutors.directExecutor())
     }
 
-    private fun sync(c: MediaController, timelineChanged: Boolean) {
-        isPlaying = c.isPlaying
-        val item = c.currentMediaItem
-        currentId = item?.mediaId?.takeIf { it.isNotEmpty() }
-        metaSong = item?.takeIf { it.mediaId.isNotEmpty() }?.let {
-            Song(
-                id = 0,
-                uri = it.mediaId,
-                title = it.mediaMetadata.title?.toString() ?: "Tanpa judul",
-                artist = it.mediaMetadata.artist?.toString() ?: UNKNOWN_ARTIST,
-                album = it.mediaMetadata.albumTitle?.toString() ?: "",
-                albumId = 0,
-                durationMs = 0,
-                dateAdded = 0,
-            )
-        }
-        shuffle = c.shuffleModeEnabled
-        repeatMode = c.repeatMode
-        queueIndex = c.currentMediaItemIndex.coerceAtLeast(0)
-        if (timelineChanged) queueIds = List(c.mediaItemCount) { c.getMediaItemAt(it).mediaId }
-    }
-
-    /** Jumlah putar tiap lagu ("jumlah|uri"), untuk daftar Lagu Populer. */
-    private val playCounts = HashMap<String, Int>().also { m ->
-        store.loadList("plays").forEach { e ->
-            val i = e.indexOf('|')
-            if (i > 0) e.substring(0, i).toIntOrNull()?.let { m[e.substring(i + 1)] = it }
-        }
-    }
-    var playCountsVersion by mutableStateOf(0)
-        private set
-
-    /** Lagu paling sering diputar; dilengkapi lagu terkini lalu terbaru bila belum cukup. */
-    fun popular(limit: Int): List<Song> {
-        val top = playCounts.entries.sortedByDescending { it.value }.mapNotNull { byUri[it.key] }
-        return (top + songsOf(recents) + allSongs.sortedByDescending { it.dateAdded }).distinctBy { it.uri }.take(limit)
-    }
-
-    private fun markRecent(id: String) {
-        playCounts[id] = (playCounts[id] ?: 0) + 1
-        store.saveList("plays", playCounts.map { "${it.value}|${it.key}" })
-        playCountsVersion++
-        recents = (listOf(id) + recents.filter { it != id }).take(30)
-        store.saveList("recent", recents)
-        viewModelScope.launch { WidgetUpdater.refresh(getApplication()) }
-    }
-
-    // ---------- Memuat lagu ----------
-    /** Pindai hanya jika belum pernah/sedang dipindai (aman dipanggil berkali-kali). */
-    fun ensureLoaded() {
-        if (!loadedOnce && loadJob?.isActive != true) loadSongs()
-    }
-
-    /** Lagu yang baru dihapus: disembunyikan dari hasil pindai walau indeks Android belum diperbarui. */
-    private val deletedUris = HashSet<String>(store.loadList("hidden"))
-    /** Lokasi file yang sudah dihapus: tetap disembunyikan walau indeks Android memberi ID baru. */
-    private val deletedPaths = HashSet<String>(store.loadList("hidden_paths"))
-
-    /** True bila ada file yang tidak bisa dihapus sistem dan perlu izin "akses semua file". */
-    var needAllFiles by mutableStateOf(false)
-
-    /** File yang ditolak sistem; dihapus otomatis begitu izin "akses semua file" diberikan. */
-    private val leftover = HashSet<String>()
-
-    fun retryLeftovers() {
-        if (leftover.isEmpty() || !hasAllFilesAccess()) return
-        val todo = leftover.toList()
-        leftover.clear()
+    private fun startPositionTicker() {
         viewModelScope.launch {
-            val n = withContext(Dispatchers.IO) {
-                var bad = 0
-                todo.forEach { p ->
-                    val f = java.io.File(p)
-                    if (f.exists() && !f.delete()) bad++
+            while (true) {
+                controller?.let { player ->
+                    _positionMs.value = player.currentPosition.coerceAtLeast(0L)
+                    val dur = player.duration
+                    if (dur > 0) _durationMs.value = dur
                 }
-                android.media.MediaScannerConnection.scanFile(getApplication(), todo.toTypedArray(), null, null)
-                bad
+                delay(250L)
             }
-            toast(if (n == 0) "${todo.size} file dihapus permanen" else "$n file masih gagal dihapus")
-            loadSongs()
         }
     }
 
-    fun hasAllFilesAccess(): Boolean =
-        android.os.Build.VERSION.SDK_INT < 30 || android.os.Environment.isExternalStorageManager()
-
-    fun loadSongs() {
-        loadJob?.cancel()
-        loadJob = viewModelScope.launch {
-            loading = true
-            val scanned = MediaRepository.scan(getApplication()).filter { it.uri !in deletedUris && (it.path.isEmpty() || it.path !in deletedPaths) }
-            val known = scanned.mapTo(HashSet()) { it.uri }
-            val extra = store.loadExtra().filter { it.uri !in known }
-            allSongs = scanned + extra
-            applySort()
-            loading = false
-            loadedOnce = true
-            flushActions()
+    fun selectTab(tab: AppTab) {
+        _selectedTab.value = tab
+        if (tab == AppTab.DOWNLOADS || tab == AppTab.SONGS || tab == AppTab.VIDEOS) {
+            refreshLibrary()
         }
     }
 
-    private fun applySort() {
-        songs = when (sortMode) {
-            1 -> allSongs.sortedByDescending { it.dateAdded }
-            2 -> allSongs.sortedBy { it.artist.lowercase() }
-            else -> allSongs.sortedBy { it.title.lowercase() }
-        }
-        byUri = allSongs.associateBy { it.uri } + external
+    fun setSearchVideosOnly(videosOnly: Boolean) {
+        _searchVideosOnly.value = videosOnly
     }
 
-    fun cycleSort() {
-        sortMode = (sortMode + 1) % 3
-        store.sortMode = sortMode
-        applySort()
-    }
-
-    /** Tambah file audio manual (dari pemilih file) — untuk file yang tidak terdeteksi otomatis. */
-    fun addFiles(uris: List<Uri>) {
-        val app = getApplication<Application>()
+    fun searchYouTube(query: String) {
+        if (query.isBlank()) return
         viewModelScope.launch {
-            val added = withContext(Dispatchers.IO) {
-                uris.mapNotNull { u ->
-                    try {
-                        app.contentResolver.takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    } catch (_: Exception) {
-                    }
-                    MediaRepository.readFromUri(app, u)
-                }
-            }
-            val current = store.loadExtra()
-            val have = current.mapTo(HashSet()) { it.uri }
-            store.saveExtra(current + added.filter { it.uri !in have })
-            toast("${added.size} file ditambahkan")
-            loadSongs()
+            _isSearchingOnline.value = true
+            val results = YouTubeApi.searchTracks(query, videosOnly = _searchVideosOnly.value)
+            _onlineResults.value = results
+            _isSearchingOnline.value = false
         }
     }
 
-    fun songsOf(uris: List<String>): List<Song> = uris.mapNotNull { byUri[it] }
+    fun playItem(item: MediaItemModel, queue: List<MediaItemModel> = listOf(item)) {
+        val mc = controller ?: return
+        _currentItem.value = item
+        loadLyricsFor(item)
 
-    fun listFor(key: DetailKey): List<Song> = when (key) {
-        DetailKey.Recent -> songsOf(recents)
-        DetailKey.Newest -> allSongs.sortedByDescending { it.dateAdded }.take(100)
-        DetailKey.All -> songs
-        DetailKey.Favorites -> songsOf(favorites)
-        is DetailKey.Playlist -> songsOf(playlists[key.name].orEmpty())
-        is DetailKey.Album -> allSongs.filter { it.album == key.name }.sortedBy { it.title.lowercase() }
-        is DetailKey.Artist -> allSongs.filter { it.artist == key.name }.sortedBy { it.title.lowercase() }
-        is DetailKey.Folder -> allSongs.filter { it.folder == key.name }.sortedBy { it.title.lowercase() }
-        DetailKey.Downloads -> allSongs.filter { it.folder.contains("download", ignoreCase = true) }
-            .sortedByDescending { it.dateAdded }
-        is DetailKey.Mix -> allSongs.filter {
-            when (key.id) {
-                "short" -> it.durationMs in 1 until 180_000
-                "mid" -> it.durationMs in 180_000..300_000
-                else -> it.durationMs > 300_000
-            }
-        }.sortedBy { it.title.lowercase() }
-    }
-
-    // ---------- Riwayat pencarian (lagu yang dipilih dari hasil cari) ----------
-    var searchHistory by mutableStateOf(store.loadList("search_hist"))
-        private set
-
-    fun addSearchHistory(song: Song) {
-        searchHistory = (listOf(song.uri) + searchHistory.filter { it != song.uri }).take(30)
-        store.saveList("search_hist", searchHistory)
-    }
-
-    fun clearSearchHistory() {
-        searchHistory = emptyList()
-        store.saveList("search_hist", searchHistory)
-    }
-
-    // ---------- Favorit & playlist ----------
-    fun toggleFavorite(song: Song) {
-        favorites = if (song.uri in favorites) favorites - song.uri else listOf(song.uri) + favorites
-        store.saveList("fav", favorites)
-    }
-
-    fun addFavorites(list: List<Song>) {
-        val add = list.map { it.uri }.filter { it !in favorites }
-        favorites = add + favorites
-        store.saveList("fav", favorites)
-        toast("${list.size} lagu ditambahkan ke favorit")
-    }
-
-    fun createPlaylist(name: String): Boolean {
-        val n = name.trim()
-        if (n.isBlank() || playlists.containsKey(n)) return false
-        playlists = playlists + (n to emptyList())
-        store.savePlaylists(playlists)
-        return true
-    }
-
-    fun addToPlaylist(name: String, song: Song) {
-        val list = playlists[name] ?: return
-        if (song.uri in list) { toast("Sudah ada di \"$name\""); return }
-        playlists = playlists + (name to (list + song.uri))
-        store.savePlaylists(playlists)
-        toast("Ditambahkan ke \"$name\"")
-    }
-
-    fun addManyToPlaylist(name: String, list: List<Song>) {
-        val cur = playlists[name] ?: return
-        val add = list.map { it.uri }.filter { it !in cur }.distinct()
-        playlists = playlists + (name to (cur + add))
-        store.savePlaylists(playlists)
-        toast(if (add.isEmpty()) "Sudah ada di \"$name\"" else "${add.size} lagu ditambahkan ke \"$name\"")
-    }
-
-    fun removeFromPlaylist(name: String, song: Song) {
-        val list = playlists[name] ?: return
-        playlists = playlists + (name to list.filter { it != song.uri })
-        store.savePlaylists(playlists)
-    }
-
-    fun deletePlaylist(name: String) {
-        playlists = playlists - name
-        store.savePlaylists(playlists)
-    }
-
-    // ---------- Hapus file ----------
-    /** Lokasi file asli, dicatat sebelum dihapus supaya bisa dipastikan benar-benar hilang. */
-    private val pathOf = HashMap<String, String>()
-
-    fun requestDelete(list: List<Song>) {
-        if (list.isEmpty()) return
-        val cr = getApplication<Application>().contentResolver
-        list.forEach { s ->
-            try {
-                @Suppress("DEPRECATION")
-                cr.query(Uri.parse(s.uri), arrayOf(android.provider.MediaStore.MediaColumns.DATA), null, null, null)?.use {
-                    if (it.moveToFirst()) it.getString(0)?.let { p -> pathOf[s.uri] = p }
-                }
-            } catch (_: Exception) {
-            }
+        if (item.mediaType == MediaType.LOCAL_VIDEO || item.mediaType == MediaType.YOUTUBE_VIDEO) {
+            YouTubeStreamEngine.setVideoMode(true)
         }
-        // Dengan izin "akses semua file" hapus langsung & pasti, tanpa dialog sistem.
-        if (android.os.Build.VERSION.SDK_INT >= 30 && android.os.Environment.isExternalStorageManager()) {
-            deleteWithFiles(list)
-        } else {
-            pendingDelete = list
-        }
+
+        val mediaItems = queue.map { toExoMediaItem(it) }
+        val startIndex = queue.indexOfFirst { it.id == item.id }.coerceAtLeast(0)
+        mc.setMediaItems(mediaItems, startIndex, 0L)
+        mc.prepare()
+        mc.play()
     }
 
-    private fun deleteWithFiles(list: List<Song>) {
-        val cr = getApplication<Application>().contentResolver
-        viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                list.forEach { s ->
-                    val p = s.path.ifEmpty { pathOf[s.uri].orEmpty() }
-                    if (p.isNotEmpty()) runCatching { java.io.File(p).delete() }
-                    runCatching { cr.delete(Uri.parse(s.uri), null, null) }
-                }
-            }
-            onDeleteDone(list)
-        }
+    fun togglePlayPause() {
+        val mc = controller ?: return
+        if (mc.isPlaying) mc.pause() else mc.play()
     }
-
-    fun clearPendingDelete() {
-        pendingDelete = null
-    }
-
-    /** Android 10 ke bawah: hapus langsung. */
-    fun deleteDirect(list: List<Song>) {
-        val cr = getApplication<Application>().contentResolver
-        var failed = false
-        list.forEach {
-            try { cr.delete(Uri.parse(it.uri), null, null) } catch (_: Exception) { failed = true }
-        }
-        if (failed) toast("Sebagian lagu tidak bisa dihapus")
-        onDeleteDone(list)
-    }
-
-    /** Dipanggil setelah file benar-benar terhapus (atau dikeluarkan dari pustaka). */
-    fun onDeleteDone(list: List<Song>) {
-        val gone = list.mapTo(HashSet()) { it.uri }
-        deletedUris.addAll(gone)
-        store.saveList("hidden", deletedUris.toList())
-        list.forEach { s -> s.path.takeIf { it.isNotEmpty() }?.let { deletedPaths.add(it) } }
-        store.saveList("hidden_paths", deletedPaths.toList())
-        favorites = favorites.filter { it !in gone }
-        store.saveList("fav", favorites)
-        recents = recents.filter { it !in gone }
-        store.saveList("recent", recents)
-        playlists = playlists.mapValues { (_, v) -> v.filter { it !in gone } }
-        store.savePlaylists(playlists)
-        store.saveExtra(store.loadExtra().filter { it.uri !in gone })
-        external.keys.removeAll(gone)
-        allSongs = allSongs.filter { it.uri !in gone }
-        applySort()
-        controller?.let { c ->
-            for (i in c.mediaItemCount - 1 downTo 0) {
-                if (c.getMediaItemAt(i).mediaId in gone) c.removeMediaItem(i)
-            }
-        }
-        // Pastikan file asli benar-benar hilang dari penyimpanan (bukan hanya dari indeks).
-        val paths = (gone.mapNotNull { pathOf.remove(it) } + list.mapNotNull { it.path.takeIf { p -> p.isNotEmpty() } }).distinct()
-        deletedPaths.addAll(paths)
-        store.saveList("hidden_paths", deletedPaths.toList())
-        viewModelScope.launch {
-            val left = withContext(Dispatchers.IO) {
-                var n = 0
-                paths.forEach { p ->
-                    val f = java.io.File(p)
-                    if (f.exists() && !f.delete()) { n++; leftover.add(p) }
-                }
-                if (paths.isNotEmpty()) {
-                    android.media.MediaScannerConnection.scanFile(getApplication(), paths.toTypedArray(), null, null)
-                }
-                n
-            }
-            if (left > 0) {
-                if (!hasAllFilesAccess()) needAllFiles = true
-                else toast("$left file belum terhapus dari penyimpanan, hapus lewat pengelola file")
-            }
-        }
-        toast("${list.size} lagu dihapus")
-        loadSongs()
-        // Indeks Android kadang telat memperbarui diri; pindai sekali lagi setelah jeda singkat.
-        viewModelScope.launch {
-            kotlinx.coroutines.delay(2500)
-            loadSongs()
-        }
-    }
-
-    // ---------- Kontrol pemutar ----------
-    fun playList(list: List<Song>, start: Int, shuffleMode: Boolean? = null) {
-        if (list.isEmpty()) return
-        val c = controller ?: run { toast("Pemutar belum siap, coba lagi"); return }
-        shuffleMode?.let { c.shuffleModeEnabled = it }
-        c.setMediaItems(list.map { it.toMediaItem() }, start.coerceIn(0, list.lastIndex), 0L)
-        c.prepare()
-        c.play()
-    }
-
-    fun shuffleAll(list: List<Song>) {
-        if (list.isEmpty()) return
-        playList(list, Random.nextInt(list.size), true)
-    }
-
-    fun playNext(song: Song) = playNextMany(listOf(song))
-
-    fun playNextMany(list: List<Song>) {
-        if (list.isEmpty()) return
-        val c = controller ?: return
-        if (c.mediaItemCount == 0) {
-            playList(list, 0)
-        } else {
-            c.addMediaItems(c.currentMediaItemIndex + 1, list.map { it.toMediaItem() })
-            toast("Diputar berikutnya")
-        }
-    }
-
-    fun addToQueue(list: List<Song>) {
-        if (list.isEmpty()) return
-        val c = controller ?: return
-        if (c.mediaItemCount == 0) {
-            playList(list, 0)
-        } else {
-            c.addMediaItems(list.map { it.toMediaItem() })
-            toast("Ditambahkan ke antrian")
-        }
-    }
-
-    fun removeCurrentFromQueue() {
-        val c = controller ?: return
-        if (c.mediaItemCount > 0) c.removeMediaItem(c.currentMediaItemIndex)
-    }
-
-    fun removeFromQueueAt(index: Int) {
-        val c = controller ?: return
-        if (index in 0 until c.mediaItemCount) c.removeMediaItem(index)
-    }
-
-    fun jumpTo(index: Int) {
-        val c = controller ?: return
-        if (index in 0 until c.mediaItemCount) {
-            c.seekToDefaultPosition(index)
-            c.play()
-        }
-    }
-
-    fun togglePlay() {
-        val c = controller ?: return
-        if (c.isPlaying) c.pause() else c.play()
-    }
-
-    fun next() { controller?.seekToNext() }
-    fun previous() { controller?.seekToPrevious() }
 
     fun seekTo(ms: Long) {
-        controller?.seekTo(ms)
-        positionMs = ms
+        controller?.seekTo(ms.coerceAtLeast(0L))
+        _positionMs.value = ms.coerceAtLeast(0L)
     }
 
-    fun toggleShuffle() { controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled } }
+    fun skipNext() {
+        controller?.seekToNextMediaItem()
+    }
 
-    fun toggleRepeat() {
-        controller?.let {
-            it.repeatMode = when (it.repeatMode) {
-                Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-                Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-                else -> Player.REPEAT_MODE_OFF
+    fun skipPrevious() {
+        controller?.seekToPreviousMediaItem()
+    }
+
+    fun toggleLyrics() {
+        val next = !_showLyrics.value
+        _showLyrics.value = next
+        if (next && _currentLyrics.value == null) {
+            _currentItem.value?.let { loadLyricsFor(it) }
+        }
+    }
+
+    fun toggleVideoMode() {
+        YouTubeStreamEngine.toggleVideoMode()
+        val item = _currentItem.value ?: return
+        val mc = controller ?: return
+        if (item.isYouTube) {
+            val pos = mc.currentPosition.coerceAtLeast(0L)
+            val wasPlaying = mc.isPlaying
+            val idx = mc.currentMediaItemIndex
+            mc.replaceMediaItem(idx, toExoMediaItem(item))
+            mc.seekTo(idx, pos)
+            mc.prepare()
+            if (wasPlaying) mc.play()
+        }
+    }
+
+    fun downloadCurrentOrItem(item: MediaItemModel, asVideo: Boolean = false) {
+        val vid = item.youtubeVideoId ?: return
+        YouTubeDownloader.startDownload(getApplication(), vid, item.title, asVideo = asVideo)
+    }
+
+    private fun loadLyricsFor(item: MediaItemModel) {
+        viewModelScope.launch {
+            _isLoadingLyrics.value = true
+            _currentLyrics.value = null
+            val docs = LyricsEngine.getLyrics(
+                cacheKey = item.id,
+                rawTitle = item.title,
+                rawArtist = item.artist,
+                durationMs = item.durationMs
+            )
+            if (_currentItem.value?.id == item.id) {
+                _currentLyrics.value = docs
+            }
+            _isLoadingLyrics.value = false
+        }
+    }
+
+    private fun toExoMediaItem(item: MediaItemModel): MediaItem {
+        val metadata = MediaMetadata.Builder()
+            .setTitle(item.title)
+            .setArtist(item.artist)
+            .setArtworkUri(item.artworkUri)
+            .build()
+
+        return MediaItem.Builder()
+            .setMediaId(item.id)
+            .setUri(item.uri)
+            .setMediaMetadata(metadata)
+            .build()
+    }
+
+    private fun findItemById(id: String): MediaItemModel? {
+        return (_onlineResults.value + _localSongs.value + _localVideos.value + _downloadedItems.value)
+            .firstOrNull { it.id == id }
+    }
+
+    fun refreshLibrary() {
+        viewModelScope.launch {
+            val (songs, videos, downloads) = withContext(Dispatchers.IO) {
+                val loadedSongs = queryLocalAudio()
+                val loadedVideos = queryLocalVideos()
+                val loadedDownloads = (loadedSongs + loadedVideos).filter {
+                    it.uri.toString().contains("MusixDownloads") ||
+                    it.album.equals("MusixDownloads", ignoreCase = true)
+                }
+                Triple(loadedSongs, loadedVideos, loadedDownloads)
+            }
+            _localSongs.value = songs
+            _localVideos.value = videos
+            _downloadedItems.value = downloads
+        }
+    }
+
+    private fun queryLocalAudio(): List<MediaItemModel> {
+        val context = getApplication<Application>()
+        val result = mutableListOf<MediaItemModel>()
+        val projection = arrayOf(
+            MediaStore.Audio.Media._ID,
+            MediaStore.Audio.Media.TITLE,
+            MediaStore.Audio.Media.ARTIST,
+            MediaStore.Audio.Media.ALBUM,
+            MediaStore.Audio.Media.DURATION,
+            MediaStore.Audio.Media.ALBUM_ID
+        )
+        context.contentResolver.query(
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+            projection,
+            "${MediaStore.Audio.Media.IS_MUSIC} != 0",
+            null,
+            "${MediaStore.Audio.Media.TITLE} ASC"
+        )?.use { cursor ->
+            val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+            val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+            val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+            val albumCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+            val durCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+            val albumIdCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
+
+            while (cursor.moveToNext()) {
+                val id = cursor.getLong(idCol)
+                val albumId = cursor.getLong(albumIdCol)
+                val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+                val artUri = ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId)
+                result.add(
+                    MediaItemModel(
+                        id = "audio_$id",
+                        title = cursor.getString(titleCol).orEmpty(),
+                        artist = cursor.getString(artistCol).orEmpty(),
+                        album = cursor.getString(albumCol).orEmpty(),
+                        durationMs = cursor.getLong(durCol),
+                        uri = contentUri,
+                        artworkUri = artUri,
+                        mediaType = MediaType.LOCAL_AUDIO
+                    )
+                )
             }
         }
+        return result
     }
 
-    // ---------- Permintaan dari luar (file manager / widget) ----------
-    /** Buka file audio dari aplikasi lain (file manager, WhatsApp, dll). */
-    fun playExternal(uri: Uri) {
-        pendingExternal = uri
-        flushPending()
-    }
-
-    private fun flushPending() {
-        if (controller == null) return
-        val u = pendingExternal ?: return
-        pendingExternal = null
-        viewModelScope.launch {
-            val s = withContext(Dispatchers.IO) { MediaRepository.readFromUri(getApplication(), u) } ?: return@launch
-            external[s.uri] = s
-            byUri = byUri + (s.uri to s)
-            playList(listOf(s), 0)
-        }
-    }
-
-    /** Dari widget: putar lagu ini di dalam pustaka (antrian = seluruh pustaka). */
-    fun playUriInLibrary(uri: String) {
-        pendingPlayUri = uri
-        flushActions()
-    }
-
-    /** Dari widget "Rekomendasi": acak seluruh pustaka. */
-    fun requestShuffleAll() {
-        wantShuffleAll = true
-        flushActions()
-    }
-
-    /** Dari widget "Cari dan putar": buka tab cari. */
-    fun requestSearchTab() {
-        pendingTab = 4
-    }
-
-    private fun flushActions() {
-        if (controller == null) return
-        if (wantShuffleAll && songs.isNotEmpty()) {
-            wantShuffleAll = false
-            shuffleAll(songs)
-        }
-        val u = pendingPlayUri
-        if (u != null && allSongs.isNotEmpty()) {
-            pendingPlayUri = null
-            val idx = songs.indexOfFirst { it.uri == u }
-            if (idx >= 0) playList(songs, idx) else playExternal(Uri.parse(u))
-        }
-    }
-
-    // ---------- Timer tidur ----------
-    fun setSleepTimer(minutes: Int) {
-        val c = controller ?: return
-        sleepEndsAt = if (minutes > 0) System.currentTimeMillis() + minutes * 60_000L else 0L
-        c.sendCustomCommand(
-            SessionCommand(CMD_SLEEP, Bundle.EMPTY),
-            Bundle().apply { putInt("min", minutes) },
+    private fun queryLocalVideos(): List<MediaItemModel> {
+        val context = getApplication<Application>()
+        val result = mutableListOf<MediaItemModel>()
+        val projection = arrayOf(
+            MediaStore.Video.Media._ID,
+            MediaStore.Video.Media.TITLE,
+            MediaStore.Video.Media.ARTIST,
+            MediaStore.Video.Media.BUCKET_DISPLAY_NAME,
+            MediaStore.Video.Media.DURATION
         )
-        toast(if (minutes > 0) "Timer tidur: $minutes menit" else "Timer tidur dimatikan")
-    }
+        context.contentResolver.query(
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+            projection,
+            null,
+            null,
+            "${MediaStore.Video.Media.DATE_ADDED} DESC"
+        )?.use { cursor ->
+            val idCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+            val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.TITLE)
+            val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.ARTIST)
+            val bucketCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.BUCKET_DISPLAY_NAME)
+            val durCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
 
-    private fun toast(msg: String) {
-        Toast.makeText(getApplication(), msg, Toast.LENGTH_SHORT).show()
-    }
-
-    override fun onCleared() {
-        controller?.release()
-        controller = null
-        super.onCleared()
+            while (cursor.moveToNext()) {
+                val id = cursor.getLong(idCol)
+                val contentUri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id)
+                result.add(
+                    MediaItemModel(
+                        id = "video_$id",
+                        title = cursor.getString(titleCol).orEmpty(),
+                        artist = cursor.getString(artistCol).orEmpty().ifBlank { "Video Lokal" },
+                        album = cursor.getString(bucketCol).orEmpty(),
+                        durationMs = cursor.getLong(durCol),
+                        uri = contentUri,
+                        artworkUri = contentUri,
+                        mediaType = MediaType.LOCAL_VIDEO
+                    )
+                )
+            }
+        }
+        return result
     }
 }
