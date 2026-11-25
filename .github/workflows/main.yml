@@ -24,11 +24,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: |
-            platform-tools
-            platforms;android-34
-            build-tools;34.0.0
-            cmdline-tools;latest
+          packages: platform-tools platforms;android-34 build-tools;34.0.0
 
       - name: Scaffold Gradle Project & Map Source Files
         run: |
