@@ -35,6 +35,8 @@ jobs:
                   if m and m.group(1).startswith("com.glassplayer.app"):
                       sub = m.group(1)[len("com.glassplayer.app"):].strip(".").replace(".", "/")
                       put(name, J + (sub + "/" if sub else ""))
+              elif name.endswith((".ttf", ".otf")):
+                  put(name, R + "font/")
               elif name == "AndroidManifest.xml":
                   put(name, "app/src/main/")
               elif name.endswith(".xml"):
@@ -137,6 +139,7 @@ jobs:
                   versionName = "1.9.12"
                   val repo = System.getenv("GITHUB_REPOSITORY") ?: "ahlanisa71-svg/Musik"
                   buildConfigField("String", "UPDATE_REPO", "\"$repo\"")
+                  buildConfigField("String", "YT_API_KEY", "\"${System.getenv("YT_API_KEY") ?: ""}\"")
               }
 
               signingConfigs {
@@ -209,6 +212,8 @@ jobs:
 
       - name: Build APK
         shell: bash
+        env:
+          YT_API_KEY: ${{ secrets.YT_API_KEY }}
         run: |
           set -o pipefail
           gradle assembleDebug --no-daemon 2>&1 | tee build.log
@@ -241,4 +246,4 @@ jobs:
           tag_name: v${{ steps.ver.outputs.name }}-c${{ steps.ver.outputs.code }}-b${{ github.run_number }}
           name: Musix ${{ steps.ver.outputs.name }} (build ${{ github.run_number }})
           files: GlassPlayer.apk
-          make_latest: true
+          make_latest: true no
