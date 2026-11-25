@@ -114,7 +114,15 @@ jobs:
           python3 - << 'EOF'
           import os, shutil
 
-          if not os.path.exists("settings.gradle.kts") and not os.path.exists("settings.gradle"):
+          settings_path = "settings.gradle.kts" if os.path.exists("settings.gradle.kts") else ("settings.gradle" if os.path.exists("settings.gradle") else "settings.gradle.kts")
+
+          if os.path.exists(settings_path):
+              with open(settings_path, "r", encoding="utf-8") as f:
+                  s_content = f.read()
+              if 'include(":app")' not in s_content and "include(':app')" not in s_content and 'include ":app"' not in s_content:
+                  with open(settings_path, "a", encoding="utf-8") as f:
+                      f.write('\ninclude(":app")\n')
+          else:
               with open("settings.gradle.kts", "w", encoding="utf-8") as f:
                   f.write("""pluginManagement {
               repositories {
@@ -131,16 +139,8 @@ jobs:
                   maven { url = uri("https://jitpack.io") }
               }
           }
-          rootProject.name = "Musik"
+          rootProject.name = "GlassPlayer"
           include(":app")
-          """)
-
-          with open("build.gradle.kts", "w", encoding="utf-8") as f:
-              f.write("""plugins {
-              id("com.android.application") version "8.6.0" apply false
-              id("org.jetbrains.kotlin.android") version "2.0.20" apply false
-              id("org.jetbrains.kotlin.plugin.compose") version "2.0.20" apply false
-          }
           """)
 
           if not os.path.exists("gradle.properties"):
@@ -156,7 +156,8 @@ jobs:
               with open("build.gradle.kts", "r", encoding="utf-8") as src:
                   root_content = src.read()
               if "apply false" not in root_content:
-                  shutil.copy("build.gradle.kts", "app/build.gradle.kts")
+                  if not os.path.exists("app/build.gradle.kts"):
+                      shutil.copy("build.gradle.kts", "app/build.gradle.kts")
                   with open("build.gradle.kts", "w", encoding="utf-8") as f:
                       f.write("""plugins {
               id("com.android.application") version "8.6.0" apply false
