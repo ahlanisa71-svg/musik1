@@ -12,8 +12,8 @@ android {
         applicationId = "com.glassplayer.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 14
-        versionName = "1.9.5"
+        versionCode = 21
+        versionName = "1.9.12"
         val repo = System.getenv("GITHUB_REPOSITORY") ?: "ahlanisa71-svg/Musik"
         buildConfigField("String", "UPDATE_REPO", "\"$repo\"")
     }
