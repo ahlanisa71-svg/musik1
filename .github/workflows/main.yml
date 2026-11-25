@@ -112,7 +112,7 @@ jobs:
       - name: Configure Gradle Root & App Module
         run: |
           python3 - << 'EOF'
-          import os, shutil
+          import os, re, shutil
 
           settings_path = "settings.gradle.kts" if os.path.exists("settings.gradle.kts") else ("settings.gradle" if os.path.exists("settings.gradle") else "settings.gradle.kts")
 
@@ -165,6 +165,25 @@ jobs:
               id("org.jetbrains.kotlin.plugin.compose") version "2.0.20" apply false
           }
           """)
+
+          if os.path.exists("app/build.gradle.kts"):
+              with open("app/build.gradle.kts", "r", encoding="utf-8") as f:
+                  app_gradle = f.read()
+              extra_deps = []
+              if "coil-compose" not in app_gradle:
+                  extra_deps.append('    implementation("io.coil-kt:coil-compose:2.7.0")')
+              if "kotlinx-coroutines-android" not in app_gradle:
+                  extra_deps.append('    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")')
+              if "okhttp3:okhttp" not in app_gradle:
+                  extra_deps.append('    implementation("com.squareup.okhttp3:okhttp:4.12.0")')
+              if extra_deps:
+                  addition = "\n" + "\n".join(extra_deps) + "\n"
+                  m = re.search(r'\ndependencies\s*\{', app_gradle)
+                  if m:
+                      idx = m.end()
+                      app_gradle = app_gradle[:idx] + addition + app_gradle[idx:]
+                      with open("app/build.gradle.kts", "w", encoding="utf-8") as f:
+                          f.write(app_gradle)
           EOF
 
           if [ ! -f "app/musix.keystore" ] && [ ! -f "musix.keystore" ]; then
