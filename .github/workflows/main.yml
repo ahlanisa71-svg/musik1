@@ -35,6 +35,7 @@ jobs:
           pkg_path = pkg.replace(".", "/")
 
           os.makedirs(f"app/src/main/java/{pkg_path}", exist_ok=True)
+          os.makedirs(f"app/src/main/java/{pkg_path}/data", exist_ok=True)
           os.makedirs("app/src/main/res/values", exist_ok=True)
           os.makedirs("app/src/main/res/drawable", exist_ok=True)
           os.makedirs("app/src/main/res/layout", exist_ok=True)
@@ -47,15 +48,37 @@ jobs:
                   os.makedirs("app/src/main/assets", exist_ok=True)
                   shutil.copy(doc, f"app/src/main/assets/{doc}")
 
+          has_song_decl = False
           for fname in os.listdir("."):
               if fname.endswith(".kt") and os.path.isfile(fname):
                   with open(fname, "r", encoding="utf-8") as f:
                       content = f.read()
+                  if re.search(r'\b(data\s+class|class|interface|object)\s+Song\b', content):
+                      has_song_decl = True
                   m = re.search(r'^\s*package\s+([\w\.]+)', content, re.MULTILINE)
                   target_pkg = m.group(1) if m else pkg
                   target_dir = f"app/src/main/java/{target_pkg.replace('.', '/')}"
                   os.makedirs(target_dir, exist_ok=True)
                   shutil.copy(fname, os.path.join(target_dir, fname))
+
+          if not has_song_decl:
+              song_file = f"app/src/main/java/{pkg_path}/data/Song.kt"
+              song_code = (
+                  "package com.glassplayer.app.data\n\n"
+                  "data class Song(\n"
+                  "    val id: String = \"\",\n"
+                  "    val title: String = \"\",\n"
+                  "    val artist: String = \"\",\n"
+                  "    val album: String = \"\",\n"
+                  "    val duration: Long = 0L,\n"
+                  "    val uri: String = \"\",\n"
+                  "    val artworkUri: String? = null,\n"
+                  "    val streamUrl: String = \"\",\n"
+                  "    val isDownloaded: Boolean = false\n"
+                  ")\n"
+              )
+              with open(song_file, "w", encoding="utf-8") as f:
+                  f.write(song_code)
 
           if os.path.exists("AndroidManifest.xml"):
               shutil.copy("AndroidManifest.xml", "app/src/main/AndroidManifest.xml")
@@ -86,7 +109,7 @@ jobs:
                   shutil.copy(res_file, f"app/src/main/res/drawable/{res_file}")
           EOF
 
-      - name: Ensure Gradle Build Configuration Exists
+      - name: Configure Gradle Root & App Module
         run: |
           python3 - << 'EOF'
           import os, shutil
@@ -108,8 +131,16 @@ jobs:
                   maven { url = uri("https://jitpack.io") }
               }
           }
-          rootProject.name = "Musix1"
+          rootProject.name = "Musik"
           include(":app")
+          """)
+
+          with open("build.gradle.kts", "w", encoding="utf-8") as f:
+              f.write("""plugins {
+              id("com.android.application") version "8.6.0" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.20" apply false
+              id("org.jetbrains.kotlin.plugin.compose") version "2.0.20" apply false
+          }
           """)
 
           if not os.path.exists("gradle.properties"):
@@ -121,10 +152,33 @@ jobs:
           """)
 
           os.makedirs("app", exist_ok=True)
-          if not os.path.exists("app/build.gradle.kts") and not os.path.exists("app/build.gradle"):
-              if os.path.exists("build.gradle.kts"):
+          if os.path.exists("build.gradle.kts"):
+              with open("build.gradle.kts", "r", encoding="utf-8") as src:
+                  root_content = src.read()
+              if "apply false" not in root_content:
                   shutil.copy("build.gradle.kts", "app/build.gradle.kts")
+                  with open("build.gradle.kts", "w", encoding="utf-8") as f:
+                      f.write("""plugins {
+              id("com.android.application") version "8.6.0" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.20" apply false
+              id("org.jetbrains.kotlin.plugin.compose") version "2.0.20" apply false
+          }
+          """)
           EOF
+
+          if [ ! -f "app/musix.keystore" ] && [ ! -f "musix.keystore" ]; then
+            keytool -genkeypair -v \
+              -keystore app/musix.keystore \
+              -storepass musix123 \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -alias musix \
+              -keypass musix123 \
+              -dname "CN=Musix, OU=Dev, O=GlassPlayer, L=ID, S=ID, C=ID"
+          elif [ -f "musix.keystore" ] && [ ! -f "app/musix.keystore" ]; then
+            cp musix.keystore app/musix.keystore
+          fi
 
       - name: Initialize Gradle Wrapper & Build Debug APK
         run: |
@@ -138,4 +192,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Musix1-Debug-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/*.apk
