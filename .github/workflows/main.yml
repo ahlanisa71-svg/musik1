@@ -174,8 +174,8 @@ jobs:
               }
 
               compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION.17
-                  targetCompatibility = JavaVersion.VERSION.17
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
                   isCoreLibraryDesugaringEnabled = true
               }
 
