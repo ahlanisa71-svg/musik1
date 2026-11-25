@@ -18,22 +18,29 @@ android {
         buildConfigField("String", "UPDATE_REPO", "\"$repo\"")
     }
 
+    val ksFile = file("musix.keystore")
     signingConfigs {
-        create("musix") {
-            storeFile = file("musix.keystore")
-            storePassword = "musix123"
-            keyAlias = "musix"
-            keyPassword = "musix123"
+        if (ksFile.exists()) {
+            create("musix") {
+                storeFile = ksFile
+                storePassword = "musix123"
+                keyAlias = "musix"
+                keyPassword = "musix123"
+            }
         }
     }
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("musix")
+            if (ksFile.exists()) {
+                signingConfig = signingConfigs.getByName("musix")
+            }
         }
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("musix")
+            if (ksFile.exists()) {
+                signingConfig = signingConfigs.getByName("musix")
+            }
         }
     }
 
@@ -69,5 +76,10 @@ dependencies {
 
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-session:1.4.1")
+    implementation("androidx.media3:media3-ui:1.4.1")
     implementation("com.google.guava:guava:32.1.3-android")
+
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("org.schabi.newpipe:newpipeextractor:0.24.2")
 }
