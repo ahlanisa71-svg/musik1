@@ -252,7 +252,7 @@ class YouTubeDownloadService : Service() {
 
     private fun buildNotification(title: String, percent: Int): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setSmallIcon(android.R.drawable.ic_menu_save)
             .setContentTitle("Mengunduh: $title")
             .setContentText("$percent%")
             .setProgress(100, percent, percent == 0)

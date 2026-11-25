@@ -1,44 +1,42 @@
-package com.glassplayer.app
+package com.glassplayer.app.data
 
-import android.net.Uri
+import android.content.Context
 import com.glassplayer.app.youtube.YouTubeStreamEngine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+data class YtVideo(
+    val id: String,
+    val title: String,
+    val channel: String,
+    val thumb: String,
+)
 
 object YouTubeApi {
-    suspend fun searchTracks(
-        query: String,
-        videosOnly: Boolean = false
-    ): List<MediaItemModel> {
-        if (query.isBlank()) return emptyList()
-        return runCatching {
-            val items = YouTubeStreamEngine.search(query.trim(), videosOnly = videosOnly)
+    val hasKey: Boolean = true
+
+    suspend fun musicVideos(ctx: Context): Result<List<YtVideo>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val items = YouTubeStreamEngine.search("official music video", videosOnly = true)
             items.mapNotNull { item ->
                 val rawUrl = item.url ?: return@mapNotNull null
-                val videoId = extractYoutubeIdFromUrl(rawUrl) ?: return@mapNotNull null
+                val videoId = when {
+                    "v=" in rawUrl -> rawUrl.substringAfter("v=").substringBefore("&")
+                    "youtu.be/" in rawUrl -> rawUrl.substringAfter("youtu.be/").substringBefore("?")
+                    "/shorts/" in rawUrl -> rawUrl.substringAfter("/shorts/").substringBefore("?")
+                    else -> null
+                }?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+
                 val thumbUrl = item.thumbnails.maxByOrNull { it.width }?.url
                     ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
-                val type = if (videosOnly) MediaType.YOUTUBE_VIDEO else MediaType.YOUTUBE_SONG
 
-                MediaItemModel(
-                    id = "yt_$videoId",
-                    title = item.name.orEmpty().ifBlank { "Unknown Track" },
-                    artist = item.uploaderName.orEmpty().ifBlank { "YouTube" },
-                    album = "YouTube",
-                    durationMs = (item.duration * 1000L).coerceAtLeast(0L),
-                    uri = Uri.parse(YouTubeStreamEngine.buildUriString(videoId, isVideo = videosOnly)),
-                    artworkUri = Uri.parse(thumbUrl),
-                    mediaType = type,
-                    youtubeVideoId = videoId
+                YtVideo(
+                    id = videoId,
+                    title = item.name.orEmpty().ifBlank { "Music Video" },
+                    channel = item.uploaderName.orEmpty().ifBlank { "YouTube" },
+                    thumb = thumbUrl,
                 )
             }
-        }.getOrDefault(emptyList())
-    }
-
-    private fun extractYoutubeIdFromUrl(url: String): String? {
-        return when {
-            "v=" in url -> url.substringAfter("v=").substringBefore("&")
-            "youtu.be/" in url -> url.substringAfter("youtu.be/").substringBefore("?")
-            "/shorts/" in url -> url.substringAfter("/shorts/").substringBefore("?")
-            else -> null
-        }?.takeIf { it.isNotBlank() }
+        }
     }
 }
