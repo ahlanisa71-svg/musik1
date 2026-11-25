@@ -145,6 +145,8 @@ jobs:
                   extra_deps.append('    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")')
               if "okhttp3:okhttp" not in app_gradle:
                   extra_deps.append('    implementation("com.squareup.okhttp3:okhttp:4.12.0")')
+              if "NewPipeExtractor" not in app_gradle:
+                  extra_deps.append('    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.22.7")')
               if extra_deps:
                   addition = "\n" + "\n".join(extra_deps) + "\n"
                   m = re.search(r'\ndependencies\s*\{', app_gradle)
@@ -154,6 +156,20 @@ jobs:
                       with open("app/build.gradle.kts", "w", encoding="utf-8") as f:
                           f.write(app_gradle)
           EOF
+
+          if [ ! -f "app/musix.keystore" ] && [ ! -f "musix.keystore" ]; then
+            keytool -genkeypair -v \
+              -keystore app/musix.keystore \
+              -storepass musix123 \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -alias musix \
+              -keypass musix123 \
+              -dname "CN=Musix, OU=Dev, O=GlassPlayer, L=ID, S=ID, C=ID"
+          elif [ -f "musix.keystore" ] && [ ! -f "app/musix.keystore" ]; then
+            cp musix.keystore app/musix.keystore
+          fi
 
       - name: Initialize Gradle Wrapper & Build Debug APK
         run: |
