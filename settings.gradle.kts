@@ -13,5 +13,5 @@ dependencyResolutionManagement {
         maven { url = uri("https://jitpack.io") }
     }
 }
-rootProject.name = "GlassPlayer"
+rootProject.name = "Musix1"
 include(":app")
