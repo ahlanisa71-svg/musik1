@@ -5,7 +5,7 @@ import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.widget.Toast
+import com.glassplayer.app.ui.TrToast as Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -209,7 +209,26 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         if (timelineChanged) queueIds = List(c.mediaItemCount) { c.getMediaItemAt(it).mediaId }
     }
 
+    /** Jumlah putar tiap lagu ("jumlah|uri"), untuk daftar Lagu Populer. */
+    private val playCounts = HashMap<String, Int>().also { m ->
+        store.loadList("plays").forEach { e ->
+            val i = e.indexOf('|')
+            if (i > 0) e.substring(0, i).toIntOrNull()?.let { m[e.substring(i + 1)] = it }
+        }
+    }
+    var playCountsVersion by mutableStateOf(0)
+        private set
+
+    /** Lagu paling sering diputar; dilengkapi lagu terkini lalu terbaru bila belum cukup. */
+    fun popular(limit: Int): List<Song> {
+        val top = playCounts.entries.sortedByDescending { it.value }.mapNotNull { byUri[it.key] }
+        return (top + songsOf(recents) + allSongs.sortedByDescending { it.dateAdded }).distinctBy { it.uri }.take(limit)
+    }
+
     private fun markRecent(id: String) {
+        playCounts[id] = (playCounts[id] ?: 0) + 1
+        store.saveList("plays", playCounts.map { "${it.value}|${it.key}" })
+        playCountsVersion++
         recents = (listOf(id) + recents.filter { it != id }).take(30)
         store.saveList("recent", recents)
         viewModelScope.launch { WidgetUpdater.refresh(getApplication()) }

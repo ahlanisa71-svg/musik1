@@ -8,7 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import android.provider.Settings
-import android.widget.Toast
+import com.glassplayer.app.ui.TrToast as Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
@@ -70,7 +70,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
@@ -474,14 +473,11 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
                         onNewPlaylist = { afterCreate = null; showNewPlaylist = true },
                     )
                     st.tab == 4 -> SearchScreen(vm, actions, query, { scope.launch { drawerState.open() } }, onSelect)
-                    st.tab == 0 -> LibraryScreen(
+                    st.tab == 0 -> HomeScreen(
                         vm = vm, actions = actions,
                         onOpenDrawer = { scope.launch { drawerState.open() } },
-                        onSearch = { tab = 4 }, onDetail = { detail = it },
-                        onPlaylists = { pageFrom = null; page = Page.Playlists },
-                        onNewPlaylist = { afterCreate = null; showNewPlaylist = true },
-                        onPickFiles = { pickFiles() }, onSelect = onSelect,
-                        onSelectMode = { list -> selection = Sel(list, emptySet()) },
+                        onTab = { tab = it; detail = null; page = null; pageFrom = null },
+                        onDetail = { detail = it },
                     )
                     else -> DetailScreen(
                         title = "Favorit",

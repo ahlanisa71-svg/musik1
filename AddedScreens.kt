@@ -14,7 +14,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,6 +26,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import com.glassplayer.app.MusicViewModel
 import com.glassplayer.app.data.Song
 import java.util.Locale
@@ -38,6 +40,16 @@ private val moodChoices = listOf(
 @Composable
 fun NewMusicScreen(vm: MusicViewModel, onOpen: (List<Song>, String) -> Unit) {
     val newest = vm.listFor(com.glassplayer.app.DetailKey.Newest)
+    val ctx = LocalContext.current
+    var videos by remember { mutableStateOf<List<com.glassplayer.app.data.YtVideo>?>(null) }
+    var videosErr by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        if (com.glassplayer.app.data.YouTubeApi.hasKey) {
+            val r = com.glassplayer.app.data.YouTubeApi.musicVideos(ctx)
+            videos = r.getOrNull()
+            videosErr = r.exceptionOrNull()?.message
+        }
+    }
     Column(Modifier.fillMaxSize()) {
         PageHeader("New", onBack = {})
         LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 210.dp)) {
@@ -57,7 +69,35 @@ fun NewMusicScreen(vm: MusicViewModel, onOpen: (List<Song>, String) -> Unit) {
                 Spacer(Modifier.height(12.dp))
             }
             item { Text("Music videos", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 10.dp)) }
-            item { Text("Video musik online belum diaktifkan pada versi lokal ini. Koleksi audio perangkat tetap bisa diputar dari sini.", color = SubText, fontSize = 13.sp) }
+            if (!com.glassplayer.app.data.YouTubeApi.hasKey) {
+                item { Text("Kunci YouTube API belum diisi. Tambahkan secret YT_API_KEY di GitHub lalu build ulang.", color = SubText, fontSize = 13.sp) }
+            } else if (videosErr != null) {
+                item { Text(videosErr!!, color = SubText, fontSize = 13.sp) }
+            } else if (videos == null) {
+                item { Text("Memuat video musik…", color = SubText, fontSize = 13.sp) }
+            } else {
+                items(videos!!, key = { "yt:" + it.id }) { v ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(RoundedCornerShape(16.dp))
+                            .background(Color.White.copy(.08f))
+                            .clickable {
+                                runCatching {
+                                    ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=${v.id}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                                }
+                            }
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RemoteImage(v.thumb, Modifier.width(120.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp)))
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(v.title, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(v.channel, color = SubText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("Buka di YouTube", color = Accent, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -156,9 +196,34 @@ fun DownloadsStoragePage(vm: MusicViewModel, onBack: () -> Unit) {
 @Composable
 fun AppSettingsPage(onBack: () -> Unit, onTheme: () -> Unit) {
     val ctx = LocalContext.current
+    var showLang by remember { mutableStateOf(false) }
+    if (showLang) {
+        MusixDialog(
+            onDismissRequest = { showLang = false },
+            confirmButton = { TextButton(onClick = { showLang = false }) { Text("Tutup", color = Accent) } },
+            title = { Text("Language") },
+            text = {
+                Column {
+                    AppLang.options.forEach { o ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { AppLang.set(ctx, o.code); showLang = false }.padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = AppLang.code == o.code, onClick = { AppLang.set(ctx, o.code); showLang = false })
+                            Spacer(Modifier.width(8.dp))
+                            androidx.compose.material3.Text(o.native, color = Color.White)
+                        }
+                    }
+                }
+            },
+        )
+    }
     Column(Modifier.fillMaxSize()) {
         PageHeader("App", onBack)
         Column(Modifier.padding(horizontal = 16.dp).clip(RoundedCornerShape(22.dp)).background(Color.White.copy(.08f))) {
+            Row(Modifier.fillMaxWidth().clickable { showLang = true }.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Language, null, tint = Accent); Spacer(Modifier.width(14.dp)); Column(Modifier.weight(1f)) { Text("Language", color = Color.White); androidx.compose.material3.Text(AppLang.currentName, color = SubText, fontSize = 11.sp) }; Icon(Icons.Rounded.ChevronRight, null, tint = SubText)
+            }
             Row(Modifier.fillMaxWidth().clickable { onTheme() }.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Palette, null, tint = Accent); Spacer(Modifier.width(14.dp)); Column(Modifier.weight(1f)) { Text("Appearance", color = Color.White); Text("Tema dan warna aplikasi", color = SubText, fontSize = 11.sp) }; Icon(Icons.Rounded.ChevronRight, null, tint = SubText)
             }
@@ -184,6 +249,30 @@ fun AppSettingsPage(onBack: () -> Unit, onTheme: () -> Unit) {
             Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Info, null, tint = Accent); Spacer(Modifier.width(14.dp)); Column { Text("Musix", color = Color.White); Text("Versi $APP_VERSION", color = SubText, fontSize = 11.sp) }
             }
+        }
+    }
+}
+
+
+private val thumbCache = HashMap<String, androidx.compose.ui.graphics.ImageBitmap>()
+
+/** Gambar dari internet (thumbnail video), dimuat sekali lalu disimpan di memori. */
+@Composable
+fun RemoteImage(url: String, modifier: Modifier = Modifier) {
+    val bmp by produceState<androidx.compose.ui.graphics.ImageBitmap?>(initialValue = thumbCache[url], url) {
+        if (value == null && url.isNotBlank()) {
+            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                    c.connectTimeout = 8000; c.readTimeout = 8000
+                    c.inputStream.use { android.graphics.BitmapFactory.decodeStream(it) }?.asImageBitmap()
+                }.getOrNull()?.also { thumbCache[url] = it }
+            }
+        }
+    }
+    Box(modifier.background(Color.White.copy(.10f))) {
+        bmp?.let {
+            androidx.compose.foundation.Image(it, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
         }
     }
 }

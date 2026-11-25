@@ -9,7 +9,7 @@ import android.os.Build
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.provider.Settings
-import android.widget.Toast
+import com.glassplayer.app.ui.TrToast as Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -30,7 +30,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue

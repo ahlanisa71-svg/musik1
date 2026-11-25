@@ -35,6 +35,9 @@ class Store(ctx: Context) {
     var crossfadeSec: Int
         get() = sp.getInt("crossfade", 0)
         set(v) { sp.edit().putInt("crossfade", v).apply() }
+    var lang: String
+        get() = sp.getString("lang", "id") ?: "id"
+        set(v) { sp.edit().putString("lang", v).apply() }
     var pureBlack: Boolean
         get() = sp.getBoolean("pure_black", false)
         set(v) { sp.edit().putBoolean("pure_black", v).apply() }

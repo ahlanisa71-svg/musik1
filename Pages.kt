@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import android.widget.Toast
+import com.glassplayer.app.ui.TrToast as Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -49,7 +49,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -93,7 +92,7 @@ sealed interface Page {
 }
 
 const val APP_NAME = "Musix"
-const val APP_VERSION = "1.9.7"
+const val APP_VERSION = "1.9.12"
 const val CONTACT_EMAIL = "rifqihisyammuddin429@gmail.com"
 const val IG_URL = "https://www.instagram.com/rifsy_am"
 const val IG_NAME = "rifsy_am"

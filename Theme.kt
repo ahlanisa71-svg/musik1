@@ -131,7 +131,10 @@ fun GlassTheme(content: @Composable () -> Unit) {
             onBackground = Color.White,
         ),
     ) {
-        ProvideBackdrop(content)
+        CompositionLocalProvider(
+            androidx.compose.ui.platform.LocalLayoutDirection provides
+                if (AppLang.isRtl) androidx.compose.ui.unit.LayoutDirection.Rtl else androidx.compose.ui.unit.LayoutDirection.Ltr,
+        ) { ProvideBackdrop(content) }
     }
 }
 
