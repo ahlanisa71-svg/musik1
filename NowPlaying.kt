@@ -19,7 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -30,28 +29,41 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
-import coil.compose.AsyncImage
-import com.glassplayer.app.download.YouTubeDownloader
+import com.glassplayer.app.data.Song
 import com.glassplayer.app.lyrics.LyricsOverlay
+import com.glassplayer.app.ui.ArtImage
+import com.glassplayer.app.ui.GlassBackground
+import com.glassplayer.app.ui.PlayerArt
+import com.glassplayer.app.ui.SubText
+import com.glassplayer.app.ui.Text
+import com.glassplayer.app.ui.fmtTime
 
 @OptIn(UnstableApi::class)
 @Composable
 fun NowPlayingScreen(
-    viewModel: MusicViewModel,
-    onCollapse: () -> Unit
+    vm: MusicViewModel,
+    onClose: () -> Unit,
+    onSleep: () -> Unit = {},
+    onStyle: () -> Unit = {},
+    onAddToPlaylist: (Song) -> Unit = {},
+    onAlbum: (String) -> Unit = {},
+    onArtist: (String) -> Unit = {},
+    onWidgets: () -> Unit = {},
+    onEqualizer: () -> Unit = {},
+    onDetails: (Song) -> Unit = {},
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
 
-    val currentItem by viewModel.currentItem.collectAsState()
-    val isPlaying by viewModel.isPlaying.collectAsState()
-    val positionMs by viewModel.positionMs.collectAsState()
-    val durationMs by viewModel.durationMs.collectAsState()
-    val showLyrics by viewModel.showLyrics.collectAsState()
-    val lyrics by viewModel.currentLyrics.collectAsState()
-    val isLoadingLyrics by viewModel.isLoadingLyrics.collectAsState()
-    val videoMode by viewModel.videoMode.collectAsState()
-    val activeDownloads by viewModel.activeDownloads.collectAsState()
+    val song = vm.currentSong ?: return
+    val isPlaying = vm.isPlaying
+    val positionMs = vm.positionMs
+    val durationMs = vm.durationMs
+    val showLyrics by vm.showLyrics.collectAsState()
+    val lyrics by vm.currentLyrics.collectAsState()
+    val isLoadingLyrics by vm.isLoadingLyrics.collectAsState()
+    val videoMode by vm.videoMode.collectAsState()
+    val fav = song.uri in vm.favorites
 
     var isFullScreenLandscape by remember { mutableStateOf(false) }
 
@@ -66,32 +78,21 @@ fun NowPlayingScreen(
         }
     }
 
-    val item = currentItem ?: return
-    val videoId = item.youtubeVideoId
-    val dlState = videoId?.let { activeDownloads[it] }
-    val alreadyDownloaded = videoId?.let { YouTubeDownloader.isDownloaded(it) } == true
+    Box(modifier = Modifier.fillMaxSize()) {
+        GlassBackground()
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(Color(0xFF1A1F2C), Color(0xFF0D1017))
-                )
-            )
-    ) {
         if (isFullScreenLandscape && videoMode) {
             Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
                 ExoVideoSurface(
-                    player = viewModel.getPlayer(),
-                    modifier = Modifier.fillMaxSize()
+                    player = vm.getPlayer(),
+                    modifier = Modifier.fillMaxSize(),
                 )
                 IconButton(
                     onClick = { isFullScreenLandscape = false },
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(16.dp)
-                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                        .background(Color.Black.copy(alpha = 0.5f), CircleShape),
                 ) {
                     Icon(Icons.Rounded.FullscreenExit, contentDescription = "Keluar Layar Penuh", tint = Color.White)
                 }
@@ -100,77 +101,45 @@ fun NowPlayingScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color.Black.copy(alpha = 0.35f), Color.Black.copy(alpha = 0.78f))
+                        )
+                    )
                     .statusBarsPadding()
                     .navigationBarsPadding()
                     .padding(horizontal = 24.dp, vertical = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    IconButton(onClick = onCollapse) {
+                    IconButton(onClick = onClose) {
                         Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Tutup", tint = Color.White)
                     }
 
-                    if (item.isVideoCapable) {
-                        Row(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(Color.White.copy(alpha = 0.12f))
-                                .padding(4.dp)
-                        ) {
-                            ModeChip(
-                                label = "Audio",
-                                selected = !videoMode,
-                                onClick = { if (videoMode) viewModel.toggleVideoMode() }
-                            )
-                            ModeChip(
-                                label = "Video",
-                                selected = videoMode,
-                                onClick = { if (!videoMode) viewModel.toggleVideoMode() }
-                            )
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        IconButton(onClick = onEqualizer) {
+                            Icon(Icons.Rounded.GraphicEq, contentDescription = "Equalizer", tint = Color.White)
                         }
-                    }
-
-                    if (item.isYouTube) {
-                        IconButton(
-                            onClick = {
-                                if (!alreadyDownloaded && dlState == null) {
-                                    viewModel.downloadCurrentOrItem(item, asVideo = videoMode)
-                                }
-                            }
-                        ) {
-                            when {
-                                dlState != null && !dlState.isCompleted && dlState.error == null -> {
-                                    CircularProgressIndicator(
-                                        progress = { dlState.progress },
-                                        modifier = Modifier.size(22.dp),
-                                        color = Color.White,
-                                        strokeWidth = 2.dp
-                                    )
-                                }
-                                alreadyDownloaded || dlState?.isCompleted == true -> {
-                                    Icon(Icons.Rounded.CheckCircle, contentDescription = "Tersimpan", tint = Color(0xFF4ADE80))
-                                }
-                                else -> {
-                                    Icon(Icons.Rounded.Download, contentDescription = "Unduh", tint = Color.White)
-                                }
-                            }
+                        IconButton(onClick = onStyle) {
+                            Icon(Icons.Rounded.Palette, contentDescription = "Gaya pemutar", tint = Color.White)
                         }
-                    } else {
-                        Spacer(Modifier.size(48.dp))
+                        IconButton(onClick = onSleep) {
+                            Icon(Icons.Rounded.Bedtime, contentDescription = "Timer tidur", tint = Color.White)
+                        }
                     }
                 }
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(14.dp))
 
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     when {
                         videoMode -> {
@@ -179,18 +148,18 @@ fun NowPlayingScreen(
                                     .fillMaxWidth()
                                     .aspectRatio(16f / 9f)
                                     .clip(RoundedCornerShape(20.dp))
-                                    .background(Color.Black)
+                                    .background(Color.Black),
                             ) {
                                 ExoVideoSurface(
-                                    player = viewModel.getPlayer(),
-                                    modifier = Modifier.fillMaxSize()
+                                    player = vm.getPlayer(),
+                                    modifier = Modifier.fillMaxSize(),
                                 )
                                 IconButton(
                                     onClick = { isFullScreenLandscape = true },
                                     modifier = Modifier
                                         .align(Alignment.BottomEnd)
                                         .padding(8.dp)
-                                        .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                                        .background(Color.Black.copy(alpha = 0.55f), CircleShape),
                                 ) {
                                     Icon(Icons.Rounded.Fullscreen, contentDescription = "Layar Penuh", tint = Color.White)
                                 }
@@ -201,19 +170,24 @@ fun NowPlayingScreen(
                                 lyrics = lyrics,
                                 isLoading = isLoadingLyrics,
                                 positionMs = positionMs,
-                                onSeek = { viewModel.seekTo(it) }
+                                onSeek = { vm.seekTo(it) },
                             )
                         }
                         else -> {
-                            AsyncImage(
-                                model = item.artworkUri,
-                                contentDescription = item.title,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .size(290.dp)
-                                    .clip(RoundedCornerShape(28.dp))
-                                    .background(Color.White.copy(alpha = 0.08f))
-                            )
+                            if (vm.playerStyle == 0) {
+                                ArtImage(
+                                    song = song,
+                                    modifier = Modifier.size(286.dp),
+                                    shape = RoundedCornerShape(28.dp),
+                                )
+                            } else {
+                                PlayerArt(
+                                    song = song,
+                                    style = vm.playerStyle,
+                                    playing = isPlaying,
+                                    size = 286.dp,
+                                )
+                            }
                         }
                     }
                 }
@@ -222,72 +196,81 @@ fun NowPlayingScreen(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = item.title,
+                            text = song.title,
                             color = Color.White,
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            text = item.artist,
-                            color = Color.White.copy(alpha = 0.7f),
+                            text = song.artist,
+                            color = SubText,
                             fontSize = 14.sp,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
 
-                    IconButton(
-                        onClick = { viewModel.toggleLyrics() },
-                        modifier = Modifier
-                            .background(
-                                if (showLyrics) Color.White.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.08f),
-                                CircleShape
-                            )
-                    ) {
+                    IconButton(onClick = { vm.toggleFavorite(song) }) {
                         Icon(
-                            Icons.Rounded.Lyrics,
+                            imageVector = if (fav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                            contentDescription = "Favorit",
+                            tint = if (fav) Color(0xFFE3A93A) else Color.White,
+                        )
+                    }
+
+                    IconButton(onClick = { vm.toggleLyrics() }) {
+                        Icon(
+                            imageVector = Icons.Rounded.Lyrics,
                             contentDescription = "Lirik",
-                            tint = if (showLyrics) Color.White else Color.White.copy(alpha = 0.75f)
+                            tint = if (showLyrics) Color(0xFFE3A93A) else Color.White.copy(alpha = 0.78f),
                         )
                     }
                 }
 
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(10.dp))
 
                 val safeDuration = durationMs.coerceAtLeast(1L)
                 Slider(
                     value = (positionMs.toFloat() / safeDuration).coerceIn(0f, 1f),
-                    onValueChange = { frac -> viewModel.seekTo((frac * safeDuration).toLong()) },
+                    onValueChange = { frac -> vm.seekTo((frac * safeDuration).toLong()) },
                     colors = SliderDefaults.colors(
                         thumbColor = Color.White,
                         activeTrackColor = Color.White,
-                        inactiveTrackColor = Color.White.copy(alpha = 0.25f)
-                    )
+                        inactiveTrackColor = Color.White.copy(alpha = 0.25f),
+                    ),
                 )
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text(formatDuration(positionMs), color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
-                    Text(formatDuration(durationMs), color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                    Text(fmtTime(positionMs), color = SubText, fontSize = 12.sp)
+                    Text(fmtTime(durationMs), color = SubText, fontSize = 12.sp)
                 }
 
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(10.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    IconButton(onClick = { viewModel.skipPrevious() }, modifier = Modifier.size(52.dp)) {
+                    IconButton(onClick = { vm.toggleRepeat() }) {
+                        Icon(
+                            imageVector = if (vm.repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+                            contentDescription = "Ulangi",
+                            tint = if (vm.repeatMode == Player.REPEAT_MODE_OFF) Color.White.copy(alpha = 0.7f) else Color(0xFFE3A93A),
+                        )
+                    }
+
+                    IconButton(onClick = { vm.previous() }, modifier = Modifier.size(52.dp)) {
                         Icon(Icons.Rounded.SkipPrevious, contentDescription = "Sebelumnya", tint = Color.White, modifier = Modifier.size(34.dp))
                     }
 
@@ -296,43 +279,29 @@ fun NowPlayingScreen(
                             .size(68.dp)
                             .clip(CircleShape)
                             .background(Color.White)
-                            .clickable { viewModel.togglePlayPause() },
-                        contentAlignment = Alignment.Center
+                            .clickable { vm.togglePlay() },
+                        contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                             contentDescription = "Putar / Jeda",
-                            tint = Color(0xFF0D1017),
-                            modifier = Modifier.size(38.dp)
+                            tint = Color(0xFF0F0F0C),
+                            modifier = Modifier.size(38.dp),
                         )
                     }
 
-                    IconButton(onClick = { viewModel.skipNext() }, modifier = Modifier.size(52.dp)) {
+                    IconButton(onClick = { vm.next() }, modifier = Modifier.size(52.dp)) {
                         Icon(Icons.Rounded.SkipNext, contentDescription = "Berikutnya", tint = Color.White, modifier = Modifier.size(34.dp))
+                    }
+
+                    IconButton(onClick = { onAddToPlaylist(song) }) {
+                        Icon(Icons.Rounded.PlaylistAdd, contentDescription = "Tambah ke daftar putar", tint = Color.White)
                     }
                 }
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(14.dp))
             }
         }
-    }
-}
-
-@Composable
-private fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .clip(CircleShape)
-            .background(if (selected) Color.White else Color.Transparent)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-    ) {
-        Text(
-            text = label,
-            color = if (selected) Color(0xFF0D1017) else Color.White.copy(alpha = 0.8f),
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold
-        )
     }
 }
 
@@ -346,7 +315,7 @@ private fun ExoVideoSurface(player: Player?, modifier: Modifier = Modifier) {
                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                 layoutParams = FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
+                    ViewGroup.LayoutParams.MATCH_PARENT,
                 )
                 this.player = player
             }
@@ -356,13 +325,6 @@ private fun ExoVideoSurface(player: Player?, modifier: Modifier = Modifier) {
                 view.player = player
             }
         },
-        modifier = modifier
+        modifier = modifier,
     )
-}
-
-private fun formatDuration(ms: Long): String {
-    val totalSec = (ms / 1000L).coerceAtLeast(0L)
-    val min = totalSec / 60
-    val sec = totalSec % 60
-    return "%d:%02d".format(min, sec)
 }
