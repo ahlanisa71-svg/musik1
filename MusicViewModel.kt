@@ -91,9 +91,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     var needAllFiles by mutableStateOf(false)
     var playCountsVersion by mutableIntStateOf(0)
         private set
+    private var sortMode by mutableIntStateOf(store.sortMode)
 
     val sortLabel: String
-        get() = when (store.sortMode) {
+        get() = when (sortMode) {
             1 -> "Terbaru"
             else -> "A–Z"
         }
@@ -271,9 +272,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun sortedSongs(list: List<Song>): List<Song> = when (store.sortMode) {
+    private fun sortedSongs(list: List<Song>): List<Song> = when (sortMode) {
         1 -> list.sortedByDescending { it.dateAdded }
         else -> list.sortedBy { it.title.lowercase() }
+    }
+
+    fun cycleSort() {
+        sortMode = (sortMode + 1) % 2
+        store.sortMode = sortMode
     }
 
     fun songsOf(uris: List<String>): List<Song> {
