@@ -1,4 +1,4 @@
-name: Build Musix1 APK
+name: Build Musix APK
 
 on:
   push:
@@ -86,10 +86,11 @@ jobs:
         run: |
           APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
           echo "APK built at: $APK_PATH"
-          cp "$APK_PATH" Musix1-debug.apk
+          cp "$APK_PATH" Musix-debug.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Musix1-APK
-          path: Musix1-debug.apk
+          name: Musix-APK
+          path: Musix-debug.apk
+          
