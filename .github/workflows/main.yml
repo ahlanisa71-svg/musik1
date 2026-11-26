@@ -19,8 +19,17 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Pre-accept Android SDK licenses
+        run: |
+          mkdir -p "$ANDROID_HOME/licenses" "$ANDROID_SDK_ROOT/licenses" 2>/dev/null || true
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+
+      - name: Accept any remaining SDK licenses
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
 
       - name: Normalize project structure if files are at root
         run: |
@@ -93,4 +102,3 @@ jobs:
         with:
           name: Musix-APK
           path: Musix-debug.apk
-          
