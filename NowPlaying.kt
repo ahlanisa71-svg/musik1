@@ -63,6 +63,7 @@ fun NowPlayingScreen(
     val lyrics by vm.currentLyrics.collectAsState()
     val isLoadingLyrics by vm.isLoadingLyrics.collectAsState()
     val videoMode by vm.videoMode.collectAsState()
+    val currentItem by vm.currentItem.collectAsState()
     val fav = song.uri in vm.favorites
 
     var isFullScreenLandscape by remember { mutableStateOf(false) }
@@ -231,6 +232,15 @@ fun NowPlayingScreen(
                             contentDescription = "Lirik",
                             tint = if (showLyrics) Color(0xFFE3A93A) else Color.White.copy(alpha = 0.78f),
                         )
+                    }
+                    if (currentItem?.isYouTube == true) {
+                        IconButton(onClick = { vm.toggleVideoMode() }) {
+                            Icon(
+                                imageVector = Icons.Rounded.VideoLibrary,
+                                contentDescription = if (videoMode) "Putar audio" else "Putar video",
+                                tint = if (videoMode) Color(0xFFE3A93A) else Color.White.copy(alpha = 0.78f),
+                            )
+                        }
                     }
                 }
 

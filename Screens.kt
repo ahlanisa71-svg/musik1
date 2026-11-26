@@ -1461,6 +1461,10 @@ fun SearchScreen(
     onSelect: (List<Song>, Song) -> Unit,
 ) {
     val favSet = remember(vm.favorites) { vm.favorites.toSet() }
+    val onlineResults by vm.onlineResults.collectAsState()
+    val searchingOnline by vm.isSearchingOnline.collectAsState()
+    val onlineSearchError by vm.onlineSearchError.collectAsState()
+    val videosOnly by vm.searchVideosOnly.collectAsState()
     val q = query.trim()
     val results = remember(q, vm.songs) {
         if (q.isEmpty()) emptyList()
@@ -1470,8 +1474,17 @@ fun SearchScreen(
     }
     val history = vm.songsOf(vm.searchHistory)
 
+    LaunchedEffect(q, videosOnly) {
+        if (q.isBlank()) {
+            vm.clearOnlineSearch()
+        } else {
+            kotlinx.coroutines.delay(400)
+            vm.searchYouTube(q)
+        }
+    }
+
     LazyColumn(contentPadding = PaddingValues(top = 4.dp, bottom = 240.dp)) {
-        item { TabHeader("Cari", "Lagu di HP Anda", onOpenDrawer) }
+        item { TabHeader("Cari", "Cari di perangkat dan YouTube", onOpenDrawer) }
         if (q.isEmpty()) {
             if (history.isNotEmpty()) {
                 item {
@@ -1509,10 +1522,20 @@ fun SearchScreen(
                 }
             }
         } else {
-            if (results.isEmpty()) {
+            if (results.isNotEmpty()) {
                 item {
                     Text(
-                        "Tidak ada hasil untuk \"$q\"",
+                        "DI PERANGKAT",
+                        color = SubText,
+                        fontSize = 11.sp,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                    )
+                }
+            } else if (!searchingOnline && onlineResults.isEmpty() && onlineSearchError == null) {
+                item {
+                    Text(
+                        "Tidak ada lagu di perangkat yang cocok.",
                         color = SubText,
                         modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().glass().padding(24.dp),
                         textAlign = TextAlign.Center,
@@ -1532,6 +1555,79 @@ fun SearchScreen(
                 ) {
                     vm.addSearchHistory(s.title)
                     vm.playList(results, i)
+                }
+            }
+
+            item {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    Text("YOUTUBE", color = SubText, fontSize = 11.sp, letterSpacing = 1.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(false to "Lagu", true to "Video").forEach { (videoMode, label) ->
+                            Text(
+                                label,
+                                color = if (videosOnly == videoMode) Color(0xFF17140D) else Color.White,
+                                fontSize = 13.sp,
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(if (videosOnly == videoMode) Accent else Color.White.copy(alpha = 0.12f))
+                                    .clickable { vm.setSearchVideosOnly(videoMode) }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                            )
+                        }
+                    }
+                }
+            }
+            when {
+                searchingOnline -> item {
+                    Text(
+                        "Mencari di YouTube…",
+                        color = SubText,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    )
+                }
+                onlineSearchError != null -> item {
+                    Text(
+                        onlineSearchError.orEmpty(),
+                        color = SubText,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    )
+                }
+                onlineResults.isEmpty() -> item {
+                    Text(
+                        "Tidak ada hasil YouTube untuk \"$q\".",
+                        color = SubText,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    )
+                }
+                else -> itemsIndexed(onlineResults, key = { _, item -> item.id }) { _, item ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color.White.copy(alpha = 0.1f))
+                            .clickable { vm.playItem(item) }
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RemoteImage(
+                            item.artworkUri?.toString().orEmpty(),
+                            Modifier.width(96.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(10.dp)),
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(item.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                item.artist + if (item.durationMs > 0) " • ${fmtTime(item.durationMs)}" else "",
+                                color = SubText,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text("Putar di Musix", color = Accent, fontSize = 11.sp)
+                        }
+                    }
                 }
             }
         }

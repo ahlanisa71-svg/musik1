@@ -2,7 +2,10 @@ package com.glassplayer.app.data
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import com.glassplayer.app.BuildConfig
@@ -11,6 +14,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.coroutines.coroutineContext
@@ -125,6 +129,10 @@ object Updater {
                     }
                 }
             }
+            if (info.sizeBytes > 0 && out.length() != info.sizeBytes) {
+                out.delete()
+                throw IOException("Ukuran APK tidak sesuai; unduhan mungkin terputus. Coba lagi.")
+            }
             out
         }
 
@@ -133,6 +141,7 @@ object Updater {
      * belum diberikan (pengaturannya dibuka; pengguna lalu menekan tombol lagi).
      */
     fun install(ctx: Context, apk: File): Boolean {
+        validateUpdateApk(ctx, apk)
         if (!ctx.packageManager.canRequestPackageInstalls()) {
             ctx.startActivity(
                 Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${ctx.packageName}"))
@@ -148,4 +157,46 @@ object Updater {
         )
         return true
     }
+
+    @Suppress("DEPRECATION")
+    private fun validateUpdateApk(ctx: Context, apk: File) {
+        if (!apk.isFile || apk.length() == 0L) {
+            throw IOException("File APK tidak ditemukan atau kosong.")
+        }
+
+        val pm = ctx.packageManager
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            PackageManager.GET_SIGNATURES
+        }
+        val candidate = pm.getPackageArchiveInfo(apk.absolutePath, flags)
+            ?: throw IOException("APK unduhan rusak atau tidak dapat dibaca.")
+        if (candidate.packageName != ctx.packageName) {
+            throw IOException("APK ini bukan pembaruan untuk aplikasi yang terpasang.")
+        }
+        val candidateVersion = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            candidate.longVersionCode
+        } else {
+            candidate.versionCode.toLong()
+        }
+        if (candidateVersion <= currentCode(ctx).toLong()) {
+            throw IOException("Versi APK tidak lebih baru dari aplikasi yang terpasang.")
+        }
+
+        val installed = pm.getPackageInfo(ctx.packageName, flags)
+        val candidateSigners = candidate.signerCertificates()
+        val installedSigners = installed.signerCertificates()
+        if (candidateSigners.isEmpty() || candidateSigners != installedSigners) {
+            throw IOException("Tanda tangan APK berbeda. Pembaruan harus dibuat dengan kunci aplikasi yang sama.")
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun PackageInfo.signerCertificates(): Set<String> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            signingInfo?.apkContentsSigners.orEmpty().map { it.toCharsString() }.toSet()
+        } else {
+            signatures.orEmpty().map { it.toCharsString() }.toSet()
+        }
 }

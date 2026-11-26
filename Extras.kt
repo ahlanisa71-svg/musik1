@@ -420,12 +420,26 @@ fun UpdateDialog(currentVersion: String, onDismiss: () -> Unit) {
                     st = UpState.Downloading(info, p)
                 }
                 st = UpState.Ready(info, f)
-                com.glassplayer.app.data.Updater.install(ctx, f)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                st = UpState.Error("Unduhan gagal. Periksa koneksi internet lalu coba lagi.")
+                st = UpState.Error(e.message?.let { "Pembaruan gagal: $it" } ?: "Pembaruan gagal. Coba lagi.")
             }
+        }
+    }
+
+    fun installUpdate(file: java.io.File) {
+        try {
+            val launched = com.glassplayer.app.data.Updater.install(ctx, file)
+            if (!launched) {
+                Toast.makeText(
+                    ctx,
+                    "Izinkan pemasangan dari Musix di pengaturan, lalu kembali dan tekan Pasang lagi.",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        } catch (e: Exception) {
+            st = UpState.Error(e.message?.let { "Tidak dapat memasang pembaruan: $it" } ?: "Tidak dapat membuka pemasang Android.")
         }
     }
 
@@ -497,7 +511,7 @@ fun UpdateDialog(currentVersion: String, onDismiss: () -> Unit) {
         confirmButton = {
             when (s) {
                 is UpState.Found -> TextButton(onClick = { startDownload(s.info) }) { Text("Unduh", color = Accent) }
-                is UpState.Ready -> TextButton(onClick = { com.glassplayer.app.data.Updater.install(ctx, s.file) }) { Text("Pasang", color = Accent) }
+                is UpState.Ready -> TextButton(onClick = { installUpdate(s.file) }) { Text("Pasang", color = Accent) }
                 is UpState.Error -> TextButton(onClick = { nonce++ }) { Text("Coba lagi", color = Accent) }
                 UpState.Latest -> TextButton(onClick = { nonce++ }) { Text("Periksa lagi", color = Accent) }
                 else -> {}

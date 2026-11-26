@@ -69,9 +69,7 @@ fun NewMusicScreen(vm: MusicViewModel, onOpen: (List<Song>, String) -> Unit) {
                 Spacer(Modifier.height(12.dp))
             }
             item { Text("Music videos", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 10.dp)) }
-            if (!com.glassplayer.app.data.YouTubeApi.hasKey) {
-                item { Text("Kunci YouTube API belum diisi. Tambahkan secret YT_API_KEY di GitHub lalu build ulang.", color = SubText, fontSize = 13.sp) }
-            } else if (videosErr != null) {
+            if (videosErr != null) {
                 item { Text(videosErr!!, color = SubText, fontSize = 13.sp) }
             } else if (videos == null) {
                 item { Text("Memuat video musik…", color = SubText, fontSize = 13.sp) }
@@ -80,11 +78,7 @@ fun NewMusicScreen(vm: MusicViewModel, onOpen: (List<Song>, String) -> Unit) {
                     Row(
                         Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(RoundedCornerShape(16.dp))
                             .background(Color.White.copy(.08f))
-                            .clickable {
-                                runCatching {
-                                    ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=${v.id}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                                }
-                            }
+                            .clickable { vm.playYouTubeVideo(v.id, v.title, v.channel, v.thumb) }
                             .padding(10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -93,7 +87,7 @@ fun NewMusicScreen(vm: MusicViewModel, onOpen: (List<Song>, String) -> Unit) {
                         Column(Modifier.weight(1f)) {
                             Text(v.title, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             Text(v.channel, color = SubText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("Buka di YouTube", color = Accent, fontSize = 11.sp)
+                            Text("Putar di Musix", color = Accent, fontSize = 11.sp)
                         }
                     }
                 }

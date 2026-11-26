@@ -132,26 +132,26 @@ jobs:
           fi
           chmod +x gradlew
 
-      - name: Build Debug APK
+      - name: Build Release APK
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Prepare APK Artifact
         run: |
-          APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
+          APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
           if [ -z "$APK_PATH" ]; then
-            echo "Debug APK was not produced." >&2
+            echo "Release APK was not produced." >&2
             exit 1
           fi
           echo "APK built at: $APK_PATH"
-          cp "$APK_PATH" Musix-debug.apk
+          cp "$APK_PATH" Musix.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Musix-APK
-          path: Musix-debug.apk
+          path: Musix.apk
 
       - name: Publish APK Release
         env:
@@ -168,9 +168,9 @@ jobs:
           TAG="v${VERSION_NAME}-c${VERSION_CODE}-b${GITHUB_RUN_NUMBER}"
           TITLE="Musix ${VERSION_NAME} (build ${GITHUB_RUN_NUMBER})"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" Musix-debug.apk --repo "$GITHUB_REPOSITORY" --clobber
+            gh release upload "$TAG" Musix.apk --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$TAG" Musix-debug.apk \
+            gh release create "$TAG" Musix.apk \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
               --title "$TITLE" \

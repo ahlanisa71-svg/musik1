@@ -30,7 +30,7 @@ class MainActivity : ComponentActivity() {
             GlassTheme {
                 var revealed by remember { mutableStateOf(false) }
                 LaunchedEffect(Unit) {
-                    delay(1400)
+                    delay(400)
                     revealed = true
                 }
                 if (!revealed) {

@@ -11,6 +11,7 @@ Pemutar musik offline untuk Android dengan tampilan kaca (glassmorphism) ala iPh
 - Beranda seperti referensi: bilah cari, 3 kartu kaca (Terbaru / Favorit / Baru Ditambah), panel kaca Playlist & Album, daftar semua lagu, menu samping, mini player, navigasi bawah.
 - Layar "Sedang Diputar": cover besar, seekbar, acak, ulangi, favorit, timer tidur.
 - Favorit, playlist buatan sendiri, pencarian, urutkan (A–Z / terbaru / artis).
+- Pencarian lagu/video YouTube dari tab Cari, dengan pemutaran di layar Musix.
 - Menu "Tambah file musik manual" untuk file yang tidak terdeteksi otomatis, serta bisa dibuka langsung dari file manager.
 
 ## Cara mendapatkan APK lewat GitHub
@@ -22,7 +23,9 @@ Pemutar musik offline untuk Android dengan tampilan kaca (glassmorphism) ala iPh
 3. Setelah hijau, buka halaman run → bagian **Artifacts** → unduh `Musix-APK`.
 4. Install APK (izinkan "install dari sumber tidak dikenal"), buka aplikasi, izinkan akses musik dan notifikasi.
 
-> APK yang dihasilkan bertipe debug (ditandatangani kunci debug), cukup untuk dipakai sehari-hari.
+> APK rilis ditandatangani dengan kunci aplikasi yang sama agar dapat memperbarui versi sebelumnya.
+
+Pembaruan aplikasi harus memakai tanda tangan yang sama dengan versi terpasang. Android/Play Protect dapat tetap menampilkan peringatan untuk APK yang dipasang dari luar Play Store; jangan menonaktifkan perlindungan untuk melewatinya. Unduh hanya dari rilis resmi repositori dan minta peninjauan Play Protect jika Anda yakin APK ditandatangani dan didistribusikan dengan benar.
 
 ## Build di komputer (opsional)
 Butuh JDK 17 + Android SDK, lalu buka folder ini di Android Studio dan jalankan *Build > Build APK*.
