@@ -47,10 +47,12 @@ jobs:
           if [ ! -f "app/src/main/AndroidManifest.xml" ] && [ -f "AndroidManifest.xml" ]; then
             mkdir -p app/src/main/java/com/glassplayer/app/data \
                      app/src/main/java/com/glassplayer/app/download \
+                     app/src/main/java/com/glassplayer/app/lyrics \
                      app/src/main/java/com/glassplayer/app/ui \
                      app/src/main/java/com/glassplayer/app/widget \
                      app/src/main/java/com/glassplayer/app/youtube \
                      app/src/main/res/drawable \
+                     app/src/main/res/drawable-v26 \
                      app/src/main/res/layout \
                      app/src/main/res/values \
                      app/src/main/res/xml
@@ -66,7 +68,8 @@ jobs:
                 YouTubeDownloader.kt) mv "$f" app/src/main/java/com/glassplayer/app/download/ ;;
                 YouTubeStreamEngine.kt) mv "$f" app/src/main/java/com/glassplayer/app/youtube/ ;;
                 Widgets.kt|WidgetUpdater.kt|DiscArt.kt) mv "$f" app/src/main/java/com/glassplayer/app/widget/ ;;
-                Screens.kt|AddedScreens.kt|Components.kt|Dialogs.kt|Extras.kt|HomeNew.kt|LockScreen.kt|LyricsOverlay.kt|MoreScreens.kt|NowPlaying.kt|Pages.kt|PlayerArt.kt|Splash.kt|Theme.kt)
+                LyricsEngine.kt|LyricsOverlay.kt) mv "$f" app/src/main/java/com/glassplayer/app/lyrics/ ;;
+                Screens.kt|AddedScreens.kt|Components.kt|Dialogs.kt|Extras.kt|HomeNew.kt|LockScreen.kt|MoreScreens.kt|NowPlaying.kt|Pages.kt|PlayerArt.kt|Splash.kt|Theme.kt)
                   mv "$f" app/src/main/java/com/glassplayer/app/ui/ ;;
                 *) mv "$f" app/src/main/java/com/glassplayer/app/ ;;
               esac
@@ -81,11 +84,15 @@ jobs:
               [ -e "$f" ] && mv "$f" app/src/main/res/values/
             done
 
-            for f in widget_capsule.xml widget_player_search.xml widget_recent.xml widget_recommend.xml; do
+            for f in widget_capsule.xml widget_disc_wide.xml widget_player_search.xml widget_recent.xml widget_recommend.xml; do
               [ -e "$f" ] && mv "$f" app/src/main/res/layout/
             done
 
-            for f in ic_*.xml splash_bg.xml widget_*.xml; do
+            for f in ic_launcher.xml ic_launcher_round.xml; do
+              [ -e "$f" ] && mv "$f" app/src/main/res/drawable-v26/
+            done
+
+            for f in ic_*.xml splash_bg.xml widget_bg.xml widget_capsule_bg.xml widget_cover_bg.xml widget_cover_circle.xml widget_glass_bg.xml widget_hole.xml widget_scrim.xml widget_search_bg.xml widget_vinyl.xml; do
               [ -e "$f" ] && mv "$f" app/src/main/res/drawable/
             done
           fi
@@ -105,6 +112,10 @@ jobs:
       - name: Prepare APK Artifact
         run: |
           APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
+          if [ -z "$APK_PATH" ]; then
+            echo "Debug APK was not produced." >&2
+            exit 1
+          fi
           echo "APK built at: $APK_PATH"
           cp "$APK_PATH" Musix-debug.apk
 

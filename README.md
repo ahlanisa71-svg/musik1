@@ -16,12 +16,10 @@ Pemutar musik offline untuk Android dengan tampilan kaca (glassmorphism) ala iPh
 ## Cara mendapatkan APK lewat GitHub
 1. Buat repository baru di GitHub (kosong), lalu upload **seluruh isi folder ini** (termasuk folder `.github`) ke branch `main`.
    - Dari HP: buka repo → *Add file* → *Upload files* → pilih semua file/folder hasil ekstrak ZIP.
-     Pastikan folder `.github/workflows/build.yml` ikut terupload.
+     Pastikan file `.github/workflows/main.yml` ikut terupload.
    - Dari komputer: `git init && git add . && git commit -m "init" && git branch -M main && git remote add origin <URL-REPO> && git push -u origin main`
-2. Buka tab **Actions** → workflow **Build APK** berjalan otomatis (±5–8 menit). Bisa juga dijalankan manual lewat *Run workflow*.
-3. Setelah hijau, ambil APK di:
-   - tab **Releases** (file `GlassPlayer.apk`, paling mudah diunduh dari HP), atau
-   - halaman run → bagian **Artifacts** → `GlassPlayer-apk`.
+2. Buka tab **Actions** → workflow **Build Musix APK** berjalan otomatis (±5–8 menit). Bisa juga dijalankan manual lewat *Run workflow*.
+3. Setelah hijau, buka halaman run → bagian **Artifacts** → unduh `Musix-APK`.
 4. Install APK (izinkan "install dari sumber tidak dikenal"), buka aplikasi, izinkan akses musik dan notifikasi.
 
 > APK yang dihasilkan bertipe debug (ditandatangani kunci debug), cukup untuk dipakai sehari-hari.
