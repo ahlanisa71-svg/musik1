@@ -99,6 +99,32 @@ jobs:
             done
           fi
 
+      - name: Restore existing APK signing key
+        run: |
+          KEY_SOURCE_TAG="v1.9.12-c21-b33"
+          git fetch --depth=1 origin "refs/tags/$KEY_SOURCE_TAG:refs/tags/$KEY_SOURCE_TAG"
+          python3 - "$KEY_SOURCE_TAG" <<'PY'
+          import base64
+          import pathlib
+          import subprocess
+          import sys
+
+          tag = sys.argv[1]
+          source = subprocess.check_output(
+              ["git", "show", f"{tag}:.github/workflows/main.yml"],
+              text=True,
+          )
+          marker = "base64 -d > app/musix.keystore <<'KEY'"
+          start = source.index(marker) + len(marker)
+          body_start = source.index("\n", start) + 1
+          end = source.index("\n          KEY", body_start)
+          encoded = "".join(line.strip() for line in source[body_start:end].splitlines())
+          key_path = pathlib.Path("app/musix.keystore")
+          key_path.write_bytes(base64.b64decode(encoded, validate=True))
+          if key_path.stat().st_size == 0:
+              raise SystemExit("Recovered signing keystore is empty.")
+          PY
+
       - name: Ensure Gradle Wrapper exists
         run: |
           if [ ! -f "./gradlew" ]; then
