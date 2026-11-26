@@ -15,5 +15,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Musix1"
+rootProject.name = "Musix"
 include(":app")
