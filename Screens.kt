@@ -1172,7 +1172,7 @@ fun DetailScreen(
             }
             Spacer(Modifier.height(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                GlassButton("Putar", Icons.Rounded.PlayArrow, { vm.playList(songs, 0, false) }, Modifier.weight(1f))
+                GlassButton("Putar", Icons.Rounded.PlayArrow, { vm.playList(songs, 0) }, Modifier.weight(1f))
                 GlassButton("Acak daftar", Icons.Rounded.Shuffle, { vm.shuffleAll(songs) }, Modifier.weight(1f))
             }
             if (onAddSongs != null) {
@@ -1529,7 +1529,7 @@ fun SearchScreen(
                     modifier = Modifier.padding(horizontal = 16.dp),
                     onLongClick = { onSelect(results, s) },
                 ) {
-                    vm.addSearchHistory(s)
+                    vm.addSearchHistory(s.title)
                     vm.playList(results, i)
                 }
             }
