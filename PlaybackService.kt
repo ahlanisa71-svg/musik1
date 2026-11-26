@@ -7,6 +7,7 @@ import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -24,7 +25,15 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
 
-        val upstreamFactory = DefaultDataSource.Factory(this)
+        val httpFactory = DefaultHttpDataSource.Factory()
+            .setUserAgent(YouTubeStreamEngine.USER_AGENT)
+            .setDefaultRequestProperties(
+                mapOf(
+                    "Origin" to "https://www.youtube.com",
+                    "Referer" to "https://www.youtube.com/"
+                )
+            )
+        val upstreamFactory = DefaultDataSource.Factory(this, httpFactory)
         val resolvingFactory = ResolvingDataSource.Factory(upstreamFactory) { dataSpec: DataSpec ->
             val rawUri = dataSpec.uri.toString()
             val videoId = YouTubeStreamEngine.extractVideoId(rawUri)

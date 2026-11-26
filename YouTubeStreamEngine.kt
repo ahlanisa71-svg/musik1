@@ -50,7 +50,7 @@ class OkHttpNewPipeDownloader : Downloader() {
             .method(request.httpMethod(), requestBody)
             .header(
                 "User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+                YouTubeStreamEngine.USER_AGENT
             )
 
         request.headers().forEach { (key, values) ->
@@ -78,6 +78,8 @@ class OkHttpNewPipeDownloader : Downloader() {
 object YouTubeStreamEngine {
     const val SCHEME = "ytmusic"
     const val WATCH_PREFIX = "https://www.youtube.com/watch?v="
+    const val USER_AGENT =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 
     @Volatile
     private var initialized = false

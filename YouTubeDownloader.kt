@@ -120,6 +120,8 @@ object YouTubeDownloader {
 
                     val request = Request.Builder()
                         .url(streamUrl)
+                        .header("User-Agent", YouTubeStreamEngine.USER_AGENT)
+                        .header("Referer", "https://www.youtube.com/")
                         .header("Range", "bytes=$offset-${offset + CHUNK_BYTES - 1}")
                         .build()
 
