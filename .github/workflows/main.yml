@@ -19,17 +19,28 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Pre-accept Android SDK licenses
+      - name: Setup Android SDK & Licenses
         run: |
-          mkdir -p "$ANDROID_HOME/licenses" "$ANDROID_SDK_ROOT/licenses" 2>/dev/null || true
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          mkdir -p "$SDK_ROOT/licenses"
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+          SDKMANAGER=""
+          for bin in \
+            "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            "$SDK_ROOT/cmdline-tools/16.0/bin/sdkmanager" \
+            "$SDK_ROOT/cmdline-tools/bin/sdkmanager"
+          do
+            if [ -x "$bin" ]; then
+              SDKMANAGER="$bin"
+              break
+            fi
+          done
 
-      - name: Accept any remaining SDK licenses
-        run: |
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          if [ -n "$SDKMANAGER" ]; then
+            yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null 2>&1 || true
+          fi
 
       - name: Normalize project structure if files are at root
         run: |
