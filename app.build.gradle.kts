@@ -12,8 +12,8 @@ android {
         applicationId = "com.glassplayer.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 21
-        versionName = "1.9.12"
+        versionCode = 22
+        versionName = "1.9.13"
         val repo = System.getenv("GITHUB_REPOSITORY") ?: "ahlanisa71-svg/musik1"
         buildConfigField("String", "UPDATE_REPO", "\"$repo\"")
     }
@@ -84,5 +84,5 @@ dependencies {
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.2")
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.27.1")
 }

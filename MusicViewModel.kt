@@ -591,9 +591,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun playItem(item: MediaItemModel, queue: List<MediaItemModel> = listOf(item)) {
         _currentItem.value = item
         loadLyricsFor(item)
-        if (item.mediaType == MediaType.LOCAL_VIDEO || item.mediaType == MediaType.YOUTUBE_VIDEO) {
-            YouTubeStreamEngine.setVideoMode(true)
-        }
+        YouTubeStreamEngine.setVideoMode(item.mediaType == MediaType.YOUTUBE_VIDEO)
         val mc = controller ?: return
         val startIndex = queue.indexOfFirst { it.id == item.id }.coerceAtLeast(0)
         val mediaItems = queue.map { m ->

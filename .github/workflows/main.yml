@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -124,3 +126,27 @@ jobs:
         with:
           name: Musix-APK
           path: Musix-debug.apk
+
+      - name: Publish APK Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          VERSION_NAME=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)
+          VERSION_CODE=$(sed -n 's/.*versionCode = \([0-9]*\).*/\1/p' app/build.gradle.kts | head -n 1)
+          if [ -z "$VERSION_NAME" ] || [ -z "$VERSION_CODE" ]; then
+            echo "Could not read the app version from app/build.gradle.kts." >&2
+            exit 1
+          fi
+
+          TAG="v${VERSION_NAME}-c${VERSION_CODE}-b${GITHUB_RUN_NUMBER}"
+          TITLE="Musix ${VERSION_NAME} (build ${GITHUB_RUN_NUMBER})"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" Musix-debug.apk --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" Musix-debug.apk \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "$TITLE" \
+              --notes "Pembaruan Musix ${VERSION_NAME}. Pasang APK ini untuk memperbarui aplikasi."
+          fi
