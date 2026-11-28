@@ -31,10 +31,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import com.glassplayer.app.MusicViewModel
+import com.glassplayer.app.MediaItemModel
+import com.glassplayer.app.RadioMoodSection
 import com.glassplayer.app.data.Song
 
 private val moodChoices = listOf(
-    "Relax" to "spa", "Sad" to "sad", "Happy" to "happy", "Romantic" to "love",
+    "Campuran" to "all", "Relax" to "spa", "Sad" to "sad", "Happy" to "happy", "Romantic" to "love",
     "Chill" to "chill", "Focus" to "focus", "Workout" to "workout", "Sleep" to "sleep",
     "Commute" to "commute", "Party" to "party", "Energize" to "energy"
 )
@@ -126,12 +128,13 @@ fun RadioMoodScreen(vm: MusicViewModel) {
     val radioResults by vm.radioResults.collectAsState()
     val isSearching by vm.isSearchingRadio.collectAsState()
     val searchError by vm.radioSearchError.collectAsState()
+    val radioMixSections by vm.radioMixSections.collectAsState()
+    val isLoadingMix by vm.isLoadingRadioMix.collectAsState()
+    val radioMixError by vm.radioMixError.collectAsState()
     var selectedMood by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
-        val initialMood = moodChoices.first().first
-        selectedMood = initialMood
-        vm.searchRadioMood(initialMood)
+        vm.loadRadioMix()
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -151,7 +154,7 @@ fun RadioMoodScreen(vm: MusicViewModel) {
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(moodChoices, key = { it.first }) { (mood, _) ->
-                        val selected = selectedMood == mood
+                        val selected = if (mood == "Campuran") selectedMood == null else selectedMood == mood
                         Text(
                             mood,
                             color = if (selected) Color.Black else Color.White,
@@ -160,49 +163,57 @@ fun RadioMoodScreen(vm: MusicViewModel) {
                                 .clip(CircleShape)
                                 .background(if (selected) Accent else Color.White.copy(.12f))
                                 .clickable {
-                                    selectedMood = mood
-                                    vm.searchRadioMood(mood)
+                                    if (mood == "Campuran") {
+                                        selectedMood = null
+                                        vm.loadRadioMix()
+                                    } else {
+                                        selectedMood = mood
+                                        vm.searchRadioMood(mood)
+                                    }
                                 }
                                 .padding(horizontal = 16.dp, vertical = 10.dp),
                         )
                     }
                 }
             }
-            selectedMood?.let { mood ->
-                item {
-                    Row(
-                        Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 18.dp, bottom = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text("RADIO ONLINE", color = Accent, fontSize = 10.sp, letterSpacing = 1.5.sp)
-                            Text(mood, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                        }
-                        listOf(
-                            Icons.AutoMirrored.Rounded.ViewList,
-                            Icons.Rounded.ViewAgenda,
-                            Icons.Rounded.GridView,
-                        ).forEachIndexed { index, icon ->
-                            Column(
-                                Modifier
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .clickable { vm.updateRadioLayout(index) }
-                                    .padding(horizontal = 5.dp, vertical = 3.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                            ) {
-                                Icon(
-                                    icon,
-                                    contentDescription = listOf("Mendetail", "Ringkas", "Petak")[index],
-                                    tint = if (vm.radioLayout == index) Accent else SubText,
-                                )
-                                Text(
-                                    listOf("Detail", "Ringkas", "Petak")[index],
-                                    color = if (vm.radioLayout == index) Accent else SubText,
-                                    fontSize = 9.sp,
-                                )
-                            }
+            if (selectedMood == null) {
+                item { RadioDisplayHeader("Campuran", vm) }
+                if (radioMixSections.isEmpty()) {
+                    item {
+                        Text(
+                            when {
+                                isLoadingMix -> "Memuat pilihan Radio…"
+                                radioMixError != null -> radioMixError.orEmpty()
+                                else -> "Belum ada lagu online untuk Radio."
+                            },
+                            color = SubText,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        )
+                    }
+                } else {
+                    radioMixSections.forEach { section ->
+                        item(key = "radio-mix-${section.mood}") {
+                            RadioMoodTrackSection(
+                                section,
+                                vm.radioLayout,
+                            ) { track -> vm.playItem(track, section.tracks) }
                         }
                     }
+                    if (isLoadingMix) {
+                        item {
+                            Text("Memuat kategori lainnya…", color = SubText, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
+                        }
+                    }
+                    radioMixError?.let { error ->
+                        item {
+                            Text(error, color = SubText, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
+                        }
+                    }
+                }
+            }
+            selectedMood?.let { mood ->
+                item {
+                    RadioDisplayHeader(mood, vm)
                 }
                 when {
                     isSearching -> item {
@@ -290,6 +301,112 @@ fun RadioMoodScreen(vm: MusicViewModel) {
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RadioDisplayHeader(title: String, vm: MusicViewModel) {
+    val icons = listOf(
+        Icons.AutoMirrored.Rounded.ViewList,
+        Icons.Rounded.ViewAgenda,
+        Icons.Rounded.GridView,
+    )
+    val labels = listOf("Detail", "Ringkas", "Petak")
+    Row(
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 18.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("RADIO ONLINE", color = Accent, fontSize = 10.sp, letterSpacing = 1.5.sp)
+            Text(title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        }
+        icons.forEachIndexed { index, icon ->
+            val selected = vm.radioLayout == index
+            Column(
+                Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { vm.updateRadioLayout(index) }
+                    .padding(horizontal = 5.dp, vertical = 3.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Icon(icon, contentDescription = labels[index], tint = if (selected) Accent else SubText)
+                Text(labels[index], color = if (selected) Accent else SubText, fontSize = 9.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun RadioMoodTrackSection(
+    section: RadioMoodSection,
+    layout: Int,
+    onPlay: (MediaItemModel) -> Unit,
+) {
+    val tracks = section.tracks.take(3)
+    if (tracks.isEmpty()) return
+    Column(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+        Text(section.mood, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+        when (layout) {
+            1 -> tracks.forEach { track ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 3.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color.White.copy(.07f))
+                        .clickable { onPlay(track) }
+                        .padding(horizontal = 8.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RemoteImage(track.artworkUri?.toString().orEmpty(), Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)))
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(track.title, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(track.artist, color = SubText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Icon(Icons.Rounded.PlayArrow, null, tint = Accent)
+                }
+            }
+            2 -> Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                tracks.forEach { track ->
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color.White.copy(.07f))
+                            .clickable { onPlay(track) }
+                            .padding(7.dp),
+                    ) {
+                        RemoteImage(track.artworkUri?.toString().orEmpty(), Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(9.dp)))
+                        Spacer(Modifier.height(6.dp))
+                        Text(track.title, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+            else -> LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                items(tracks, key = { it.id }) { track ->
+                    Column(
+                        Modifier
+                            .width(220.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color.White.copy(.07f))
+                            .clickable { onPlay(track) }
+                            .padding(10.dp),
+                    ) {
+                        RemoteImage(track.artworkUri?.toString().orEmpty(), Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(10.dp)))
+                        Spacer(Modifier.height(8.dp))
+                        Text(track.title, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(track.artist, color = SubText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }

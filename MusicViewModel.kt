@@ -42,6 +42,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 
+data class RadioMoodSection(
+    val mood: String,
+    val tracks: List<MediaItemModel>,
+)
+
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     private val appCtx = application.applicationContext
@@ -52,6 +57,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private var onlineSearchJob: Job? = null
     private var onlineSearchMoreJob: Job? = null
     private var radioSearchJob: Job? = null
+    private var radioMixJob: Job? = null
     private var homeSearchJob: Job? = null
     private var onlineSearchSession: YouTubeApiSearch.TrackSearchSession? = null
     private var playbackRequestGeneration = 0
@@ -133,6 +139,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _radioResults = MutableStateFlow<List<MediaItemModel>>(emptyList())
     val radioResults: StateFlow<List<MediaItemModel>> = _radioResults.asStateFlow()
+
+    private val _radioMixSections = MutableStateFlow<List<RadioMoodSection>>(emptyList())
+    val radioMixSections: StateFlow<List<RadioMoodSection>> = _radioMixSections.asStateFlow()
+
+    private val _isLoadingRadioMix = MutableStateFlow(false)
+    val isLoadingRadioMix: StateFlow<Boolean> = _isLoadingRadioMix.asStateFlow()
+
+    private val _radioMixError = MutableStateFlow<String?>(null)
+    val radioMixError: StateFlow<String?> = _radioMixError.asStateFlow()
 
     private val _homeOnlineTracks = MutableStateFlow<List<MediaItemModel>>(emptyList())
     val homeOnlineTracks: StateFlow<List<MediaItemModel>> = _homeOnlineTracks.asStateFlow()
@@ -763,7 +778,49 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         _isSearchingOnline.value = false
     }
 
+    fun loadRadioMix() {
+        if (_radioMixSections.value.isNotEmpty() || _isLoadingRadioMix.value) return
+        radioSearchJob?.cancel()
+        radioSearchJob = null
+        radioMixJob?.cancel()
+        radioMixJob = viewModelScope.launch {
+            val mixJob = coroutineContext[Job]
+            _radioResults.value = emptyList()
+            _radioMixError.value = null
+            _isLoadingRadioMix.value = true
+            val sections = mutableListOf<RadioMoodSection>()
+            var hadError = false
+            try {
+                for (mood in listOf("Sad", "Happy", "Relax", "Romantic", "Workout", "Focus")) {
+                    try {
+                        val tracks = YouTubeApiSearch.searchTracks("$mood songs").take(3)
+                        if (radioMixJob !== mixJob) return@launch
+                        if (tracks.isNotEmpty()) {
+                            sections += RadioMoodSection(mood, tracks)
+                            _radioMixSections.value = sections.toList()
+                        }
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        hadError = true
+                        android.util.Log.w("MusicViewModel", "Gagal memuat kategori Radio $mood.", e)
+                    }
+                }
+                if (radioMixJob === mixJob && hadError) {
+                    _radioMixError.value = "Beberapa kategori Radio tidak dapat dimuat. Periksa koneksi lalu coba lagi."
+                }
+            } finally {
+                if (radioMixJob === mixJob) {
+                    _isLoadingRadioMix.value = false
+                }
+            }
+        }
+    }
+
     fun searchRadioMood(mood: String) {
+        radioMixJob?.cancel()
+        radioMixJob = null
+        _isLoadingRadioMix.value = false
         radioSearchJob?.cancel()
         _radioResults.value = emptyList()
         _radioSearchError.value = null

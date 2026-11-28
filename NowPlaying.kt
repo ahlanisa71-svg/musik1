@@ -16,9 +16,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -38,7 +36,6 @@ import com.glassplayer.app.data.Song
 import com.glassplayer.app.lyrics.LyricsOverlay
 import com.glassplayer.app.ui.ArtImage
 import com.glassplayer.app.ui.GlassBackground
-import com.glassplayer.app.ui.PlayerArt
 import com.glassplayer.app.ui.SubText
 import com.glassplayer.app.ui.Text
 import com.glassplayer.app.ui.fmtTime
@@ -89,41 +86,19 @@ fun NowPlayingScreen(
         if (videoMode) {
             GlassBackground()
         } else {
-            val artwork = currentItem?.artworkUri
-            BoxWithConstraints(Modifier.fillMaxSize()) {
-                val imageHeight = maxHeight
-                val blurHeight = maxHeight * 0.68f
-                NowPlayingArtwork(song, artwork, Modifier.fillMaxSize())
-                Box(
-                    Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .height(blurHeight)
-                        .clipToBounds(),
-                ) {
-                    NowPlayingArtwork(
-                        song,
-                        artwork,
-                        Modifier
-                            .fillMaxWidth()
-                            .height(imageHeight)
-                            .offset(y = -(imageHeight - blurHeight))
-                            .blur(24.dp),
-                    )
-                }
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                0f to Color.Black.copy(alpha = 0.02f),
-                                0.38f to Color.Black.copy(alpha = 0.03f),
-                                0.68f to Color.Black.copy(alpha = 0.72f),
-                                1f to Color.Black.copy(alpha = 0.96f),
-                            )
-                        ),
-                )
-            }
+            NowPlayingArtwork(song, currentItem?.artworkUri, Modifier.fillMaxSize())
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.Black.copy(alpha = 0.02f),
+                            0.42f to Color.Black.copy(alpha = 0.06f),
+                            0.72f to Color.Black.copy(alpha = 0.52f),
+                            1f to Color.Black.copy(alpha = 0.78f),
+                        )
+                    ),
+            )
         }
 
         if (isFullScreenLandscape && videoMode) {
@@ -214,32 +189,7 @@ fun NowPlayingScreen(
                                 onSeek = { vm.seekTo(it) },
                             )
                         }
-                        else -> {
-                            if (vm.playerStyle == 0) {
-                                val artwork = currentItem?.takeIf { it.isYouTube }?.artworkUri
-                                if (artwork != null) {
-                                    AsyncImage(
-                                        model = artwork,
-                                        contentDescription = "Sampul ${song.title}",
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.size(286.dp).clip(RoundedCornerShape(28.dp)),
-                                    )
-                                } else {
-                                    ArtImage(
-                                        song = song,
-                                        modifier = Modifier.size(286.dp),
-                                        shape = RoundedCornerShape(28.dp),
-                                    )
-                                }
-                            } else {
-                                PlayerArt(
-                                    song = song,
-                                    style = vm.playerStyle,
-                                    playing = isPlaying,
-                                    size = 286.dp,
-                                )
-                            }
-                        }
+                        else -> Spacer(Modifier.fillMaxSize())
                     }
                 }
 
@@ -371,22 +321,21 @@ private fun NowPlayingArtwork(
     artwork: android.net.Uri?,
     modifier: Modifier,
 ) {
-    Box(modifier) {
+    if (artwork != null) {
+        AsyncImage(
+            model = artwork,
+            contentDescription = "Sampul ${song.title}",
+            contentScale = ContentScale.Crop,
+            modifier = modifier,
+        )
+    } else {
         ArtImage(
             song = song,
-            modifier = Modifier.fillMaxSize(),
+            modifier = modifier,
             shape = RectangleShape,
             seed = song.title,
             iconSize = 120.dp,
         )
-        if (artwork != null) {
-            AsyncImage(
-                model = artwork,
-                contentDescription = "Sampul ${song.title}",
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
     }
 }
 

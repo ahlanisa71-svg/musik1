@@ -1377,7 +1377,7 @@ private fun LibraryTabScreen(
         }
         item {
             Row(Modifier.padding(horizontal = 16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                LazyRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LazyRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     itemsIndexed(names) { i, n ->
                         val sel = i == chip
                         Box(
@@ -1392,8 +1392,6 @@ private fun LibraryTabScreen(
                         }
                     }
                 }
-                Spacer(Modifier.width(8.dp))
-                GlassIconButton(Icons.Rounded.Sort, "Sort: ${vm.sortLabel}", vm::cycleSort)
             }
             Spacer(Modifier.height(14.dp))
         }
