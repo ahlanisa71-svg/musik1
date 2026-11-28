@@ -49,6 +49,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private var loadedOnce = false
     private var sleepJob: Job? = null
     private var onlineSearchJob: Job? = null
+    private var radioSearchJob: Job? = null
     private var playbackRequestGeneration = 0
     private val indexedDownloadIds = mutableSetOf<String>()
     private var pendingOnlinePlayback: Pair<MediaItemModel, List<MediaItemModel>>? = null
@@ -123,6 +124,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _onlineResults = MutableStateFlow<List<MediaItemModel>>(emptyList())
     val onlineResults: StateFlow<List<MediaItemModel>> = _onlineResults.asStateFlow()
+
+    private val _radioResults = MutableStateFlow<List<MediaItemModel>>(emptyList())
+    val radioResults: StateFlow<List<MediaItemModel>> = _radioResults.asStateFlow()
+
+    private val _isSearchingRadio = MutableStateFlow(false)
+    val isSearchingRadio: StateFlow<Boolean> = _isSearchingRadio.asStateFlow()
+
+    private val _radioSearchError = MutableStateFlow<String?>(null)
+    val radioSearchError: StateFlow<String?> = _radioSearchError.asStateFlow()
 
     private val _isSearchingOnline = MutableStateFlow(false)
     val isSearchingOnline: StateFlow<Boolean> = _isSearchingOnline.asStateFlow()
@@ -215,11 +225,23 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                         val id = mediaItem?.mediaId ?: return
+                        val matchedItem = findItemById(id)
                         val matchedSong = (queueList + allSongs).firstOrNull { it.uri == id || it.id.toString() == id }
                         if (matchedSong != null) {
                             syncCurrentSong(matchedSong)
+                        } else if (matchedItem?.isYouTube == true) {
+                            currentSong = Song(
+                                id = matchedItem.id.hashCode().toLong(),
+                                uri = matchedItem.uri.toString(),
+                                title = matchedItem.title,
+                                artist = matchedItem.artist,
+                                album = matchedItem.album,
+                                durationMs = matchedItem.durationMs,
+                                folder = "YouTube",
+                            )
+                            currentId = matchedItem.uri.toString()
+                            durationMs = matchedItem.durationMs
                         }
-                        val matchedItem = findItemById(id)
                         if (matchedItem != null && matchedItem.id != _currentItem.value?.id) {
                             _currentItem.value = matchedItem
                             loadLyricsFor(matchedItem)
@@ -657,6 +679,28 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         _isSearchingOnline.value = false
     }
 
+    fun searchRadioMood(mood: String) {
+        radioSearchJob?.cancel()
+        _radioResults.value = emptyList()
+        _radioSearchError.value = null
+        _isSearchingRadio.value = true
+        radioSearchJob = viewModelScope.launch {
+            val searchJob = coroutineContext[Job]
+            try {
+                _radioResults.value = YouTubeApiSearch.searchTracks("$mood music", videosOnly = false)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _radioSearchError.value = e.message?.takeIf { it.isNotBlank() }
+                    ?: "Radio online gagal dimuat. Periksa koneksi internet."
+            } finally {
+                if (radioSearchJob === searchJob) {
+                    _isSearchingRadio.value = false
+                }
+            }
+        }
+    }
+
     fun playYouTubeVideo(id: String, title: String, artist: String, thumbnail: String) {
         val item = MediaItemModel(
             id = "yt_$id",
@@ -835,7 +879,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun findItemById(id: String): MediaItemModel? {
-        return (_onlineResults.value + _localSongs.value + _localVideos.value + _downloadedItems.value)
+        return (_radioResults.value + _onlineResults.value + _localSongs.value + _localVideos.value + _downloadedItems.value)
             .firstOrNull { it.id == id }
     }
 

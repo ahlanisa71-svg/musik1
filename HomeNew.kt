@@ -61,11 +61,13 @@ fun HomeScreen(
         val id = ctx.resources.getIdentifier("script_font", "font", ctx.packageName)
         if (id != 0) FontFamily(Font(id)) else FontFamily.Cursive
     }
-    val favSet = remember(vm.favorites) { vm.favorites.toSet() }
-    val all = vm.allSongs
-    val favs = remember(vm.favorites, all) { vm.songsOf(vm.favorites) }
+    val favorites = vm.favorites.toList()
+    val recents = vm.recents.toList()
+    val all = vm.allSongs.toList()
+    val favSet = remember(favorites) { favorites.toSet() }
+    val favs = remember(favorites, all) { vm.songsOf(favorites) }
     val newest = remember(all) { vm.listFor(DetailKey.Newest) }
-    val recent = remember(vm.recents, all) { vm.songsOf(vm.recents) }
+    val recent = remember(recents, all) { vm.songsOf(recents) }
     val mid = remember(all) { vm.listFor(DetailKey.Mix("mid")) }
     val popular = remember(all, vm.playCountsVersion) { vm.popular(8) }
 

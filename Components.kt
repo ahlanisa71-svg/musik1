@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -314,6 +315,7 @@ fun SongRow(
 @Composable
 fun MiniPlayer(vm: MusicViewModel, onClick: () -> Unit) {
     val song = vm.currentSong ?: return
+    val currentItem by vm.currentItem.collectAsState()
     var dismissed by remember { mutableStateOf(false) }
     LaunchedEffect(vm.isPlaying, vm.currentId) { if (vm.isPlaying) dismissed = false }
     if (dismissed) return
@@ -384,7 +386,15 @@ fun MiniPlayer(vm: MusicViewModel, onClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             val spin = rememberSpin(vm.isPlaying, 24f)
-            ArtImage(song, Modifier.size(44.dp).graphicsLayer { rotationZ = spin.value }, CircleShape)
+            val artwork = currentItem?.takeIf { it.isYouTube }?.artworkUri
+            if (artwork != null) {
+                RemoteImage(
+                    artwork.toString(),
+                    Modifier.size(44.dp).graphicsLayer { rotationZ = spin.value }.clip(CircleShape),
+                )
+            } else {
+                ArtImage(song, Modifier.size(44.dp).graphicsLayer { rotationZ = spin.value }, CircleShape)
+            }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(song.title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)

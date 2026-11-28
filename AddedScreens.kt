@@ -30,7 +30,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import com.glassplayer.app.MusicViewModel
 import com.glassplayer.app.data.Song
-import java.util.Locale
 
 private val moodChoices = listOf(
     "Relax" to "spa", "Sad" to "sad", "Happy" to "happy", "Romantic" to "love",
@@ -121,44 +120,80 @@ fun NewMusicScreen(vm: MusicViewModel, onOpen: (List<Song>, String) -> Unit) {
 }
 
 @Composable
-fun RadioMoodScreen(vm: MusicViewModel, onOpen: (List<Song>, String) -> Unit) {
+fun RadioMoodScreen(vm: MusicViewModel) {
+    val radioResults by vm.radioResults.collectAsState()
+    val isSearching by vm.isSearchingRadio.collectAsState()
+    val searchError by vm.radioSearchError.collectAsState()
+    var selectedMood by remember { mutableStateOf<String?>(null) }
+
     Column(Modifier.fillMaxSize()) {
         PageHeader("Radio", onBack = {})
         LazyColumn(contentPadding = PaddingValues(bottom = 210.dp)) {
-            moodChoices.forEach { (mood, key) ->
-                val songs = vm.allSongs.filter { s ->
-                    val text = "${s.title} ${s.artist} ${s.album}".lowercase(Locale.ROOT)
-                    when (key) {
-                        "sad" -> listOf("sad", "patah", "rindu", "sepi", "kecewa", "galau").any(text::contains)
-                        "love" -> listOf("love", "cinta", "romance", "sayang", "kasih").any(text::contains)
-                        "happy" -> listOf("happy", "bahagia", "senang", "smile").any(text::contains)
-                        "chill" -> listOf("chill", "acoustic", "lofi", "jazz").any(text::contains)
-                        "sleep" -> listOf("sleep", "lullaby", "relax", "piano").any(text::contains)
-                        "workout" -> listOf("workout", "gym", "sport", "run").any(text::contains)
-                        "focus" -> listOf("focus", "study", "instrumental", "ambient").any(text::contains)
-                        "party" -> listOf("party", "dance", "remix", "club").any(text::contains)
-                        "commute" -> listOf("commute", "road", "drive", "jalanan").any(text::contains)
-                        else -> listOf("energy", "rock", "metal", "upbeat").any(text::contains)
-                    }
+            item {
+                Text(
+                    "Pilih suasana untuk mencari musik online",
+                    color = SubText,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                )
+            }
+            items(moodChoices, key = { it.first }) { (mood, _) ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(if (selectedMood == mood) Accent.copy(alpha = 0.22f) else Color.White.copy(.08f))
+                        .clickable {
+                            selectedMood = mood
+                            vm.searchRadioMood(mood)
+                        }
+                        .padding(horizontal = 14.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.GraphicEq, null, tint = Accent)
+                    Spacer(Modifier.width(12.dp))
+                    Text(mood, color = Color.White, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    Icon(Icons.Rounded.ChevronRight, null, tint = SubText)
                 }
+            }
+            selectedMood?.let { mood ->
                 item {
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                        Text("MOODS & MOMENTS", color = SubText, fontSize = 10.sp, letterSpacing = 1.5.sp)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(mood, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                            Text("${songs.size} lagu", color = SubText, fontSize = 11.sp)
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color.White.copy(.08f)).clickable {
-                            if (songs.isNotEmpty()) vm.shuffleAll(songs)
-                        }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.GraphicEq, null, tint = Accent)
+                        Text("RADIO ONLINE", color = Accent, fontSize = 10.sp, letterSpacing = 1.5.sp)
+                        Text(mood, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                when {
+                    isSearching -> item {
+                        Text("Mencari musik online…", color = SubText, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
+                    }
+                    searchError != null -> item {
+                        Text(searchError.orEmpty(), color = SubText, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
+                    }
+                    radioResults.isEmpty() -> item {
+                        Text("Tidak ada hasil online untuk suasana ini.", color = SubText, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
+                    }
+                    else -> items(radioResults, key = { it.id }) { track ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color.White.copy(.08f))
+                                .clickable { vm.playItem(track, radioResults) }
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RemoteImage(
+                                track.artworkUri?.toString().orEmpty(),
+                                Modifier.size(60.dp).clip(RoundedCornerShape(10.dp)),
+                            )
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
-                                Text("$mood mix", color = Color.White, fontWeight = FontWeight.SemiBold)
-                                Text(if (songs.isEmpty()) "Belum ada lagu yang cocok di koleksi lokal" else "Putar acak • ${songs.size} lagu", color = SubText, fontSize = 11.sp)
+                                Text(track.title, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(track.artist, color = SubText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
-                            Icon(Icons.Rounded.PlayArrow, null, tint = Color.White)
                         }
                     }
                 }

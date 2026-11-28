@@ -474,7 +474,7 @@ fun AppRoot(
                         )
                     }
                     st.tab == 1 -> NewMusicScreen(vm) { list, title -> if (list.isNotEmpty()) vm.playList(list, 0) }
-                    st.tab == 2 -> RadioMoodScreen(vm) { list, title -> if (list.isNotEmpty()) vm.shuffleAll(list) }
+                    st.tab == 2 -> RadioMoodScreen(vm)
                     st.tab == 3 -> LibraryTabScreen(
                         vm = vm,
                         onOpenDrawer = { scope.launch { drawerState.open() } },
@@ -905,23 +905,24 @@ fun LibraryScreen(
     }
     var libTab by rememberSaveable { mutableStateOf(0) }
     val favSet = remember(vm.favorites) { vm.favorites.toSet() }
-    val albums = remember(vm.allSongs) {
-        vm.allSongs
+    val allSongs = vm.allSongs.toList()
+    val albums = remember(allSongs) {
+        allSongs
             .filter { it.album.isNotBlank() }
             .groupBy { it.album }
             .map { it.key to it.value }
             .sortedByDescending { it.second.size }
             .take(15)
     }
-    val artists = remember(vm.allSongs) {
-        vm.allSongs.groupBy { it.artist }.map { it.key to it.value }.sortedBy { it.first.lowercase() }
+    val artists = remember(allSongs) {
+        allSongs.groupBy { it.artist }.map { it.key to it.value }.sortedBy { it.first.lowercase() }
     }
-    val albumGroups = remember(vm.allSongs) {
-        vm.allSongs.filter { it.album.isNotBlank() }.groupBy { it.album }.map { it.key to it.value }
+    val albumGroups = remember(allSongs) {
+        allSongs.filter { it.album.isNotBlank() }.groupBy { it.album }.map { it.key to it.value }
             .sortedBy { it.first.lowercase() }
     }
-    val folders = remember(vm.allSongs) {
-        vm.allSongs.groupBy { it.folder }.map { it.key to it.value }.sortedBy { it.first.lowercase() }
+    val folders = remember(allSongs) {
+        allSongs.groupBy { it.folder }.map { it.key to it.value }.sortedBy { it.first.lowercase() }
     }
     val tabNames = listOf("Lagu", "Artis", "Album", "Folder")
 
@@ -1338,13 +1339,14 @@ private fun LibraryTabScreen(
     val playlistEntries = vm.playlists.keys.map { name ->
         LibEntry("p:$name", name, vm.songsOf(vm.playlists[name].orEmpty()).firstOrNull(), Icons.Rounded.PlaylistPlay, Color.White) { onDetail(DetailKey.Playlist(name)) }
     }
-    val artistEntries = remember(vm.allSongs) {
-        vm.allSongs.groupBy { it.artist }.map { it.key to it.value }.sortedBy { it.first.lowercase() }
+    val allSongs = vm.allSongs.toList()
+    val artistEntries = remember(allSongs) {
+        allSongs.groupBy { it.artist }.map { it.key to it.value }.sortedBy { it.first.lowercase() }
     }.map { (name, list) ->
         LibEntry("a:$name", name, list.firstOrNull(), Icons.Rounded.Person, Color.White) { onDetail(DetailKey.Artist(name)) }
     }
-    val albumEntries = remember(vm.allSongs) {
-        vm.allSongs.filter { it.album.isNotBlank() }.groupBy { it.album }.map { it.key to it.value }.sortedBy { it.first.lowercase() }
+    val albumEntries = remember(allSongs) {
+        allSongs.filter { it.album.isNotBlank() }.groupBy { it.album }.map { it.key to it.value }.sortedBy { it.first.lowercase() }
     }.map { (name, list) ->
         LibEntry("al:$name", name, list.firstOrNull(), Icons.Rounded.Album, Color.White) { onDetail(DetailKey.Album(name)) }
     }

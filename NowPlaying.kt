@@ -19,12 +19,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import coil.compose.AsyncImage
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -178,11 +180,21 @@ fun NowPlayingScreen(
                         }
                         else -> {
                             if (vm.playerStyle == 0) {
-                                ArtImage(
-                                    song = song,
-                                    modifier = Modifier.size(286.dp),
-                                    shape = RoundedCornerShape(28.dp),
-                                )
+                                val artwork = currentItem?.takeIf { it.isYouTube }?.artworkUri
+                                if (artwork != null) {
+                                    AsyncImage(
+                                        model = artwork,
+                                        contentDescription = "Sampul ${song.title}",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.size(286.dp).clip(RoundedCornerShape(28.dp)),
+                                    )
+                                } else {
+                                    ArtImage(
+                                        song = song,
+                                        modifier = Modifier.size(286.dp),
+                                        shape = RoundedCornerShape(28.dp),
+                                    )
+                                }
                             } else {
                                 PlayerArt(
                                     song = song,
