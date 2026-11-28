@@ -8,13 +8,17 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.schabi.newpipe.extractor.NewPipe
+import org.schabi.newpipe.extractor.Page
 import org.schabi.newpipe.extractor.ServiceList
+import org.schabi.newpipe.extractor.ListExtractor.InfoItemsPage
 import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.downloader.Request
 import org.schabi.newpipe.extractor.downloader.Response
 import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
 import org.schabi.newpipe.extractor.localization.ContentCountry
 import org.schabi.newpipe.extractor.localization.Localization
+import org.schabi.newpipe.extractor.search.SearchExtractor
+import org.schabi.newpipe.extractor.InfoItem
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import java.util.concurrent.ConcurrentHashMap
@@ -129,14 +133,36 @@ object YouTubeStreamEngine {
         return media.takeIf { System.currentTimeMillis() - savedAt < CACHE_TTL_MS }
     }
 
-    suspend fun search(query: String, videosOnly: Boolean = false): List<StreamInfoItem> =
+    class SearchSession internal constructor(
+        private val extractor: SearchExtractor,
+        initialPage: InfoItemsPage<InfoItem>,
+    ) {
+        val initialItems: List<StreamInfoItem> =
+            initialPage.items.filterIsInstance<StreamInfoItem>()
+
+        private var nextPage: Page? = initialPage.nextPage
+        val hasMore: Boolean
+            get() = Page.isValid(nextPage)
+
+        suspend fun loadNextPage(): List<StreamInfoItem> = withContext(Dispatchers.IO) {
+            val page = nextPage ?: return@withContext emptyList()
+            val result = extractor.getPage(page)
+            nextPage = result.nextPage
+            result.items.filterIsInstance<StreamInfoItem>()
+        }
+    }
+
+    suspend fun searchSession(query: String, videosOnly: Boolean = false): SearchSession =
         withContext(Dispatchers.IO) {
             ensureInitialized()
             val filter = if (videosOnly) listOf("videos") else listOf("music_songs", "videos")
             val extractor = ServiceList.YouTube.getSearchExtractor(query, filter, "")
             extractor.fetchPage()
-            extractor.initialPage.items.filterIsInstance<StreamInfoItem>()
+            SearchSession(extractor, extractor.initialPage)
         }
+
+    suspend fun search(query: String, videosOnly: Boolean = false): List<StreamInfoItem> =
+        searchSession(query, videosOnly).initialItems
 
     suspend fun resolve(videoId: String, forceRefresh: Boolean = false): ResolvedYouTubeMedia =
         withContext(Dispatchers.IO) {

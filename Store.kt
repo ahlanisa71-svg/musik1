@@ -20,6 +20,10 @@ class Store(ctx: Context) {
         get() = sp.getInt("player_style", 0)
         set(v) { sp.edit().putInt("player_style", v).apply() }
 
+    var radioLayout: Int
+        get() = sp.getInt("radio_layout", 0)
+        set(v) { sp.edit().putInt("radio_layout", v.coerceIn(0, 2)).apply() }
+
     var eqEnabled: Boolean
         get() = sp.getBoolean("eq_on", false)
         set(v) { sp.edit().putBoolean("eq_on", v).apply() }

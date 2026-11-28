@@ -7,10 +7,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -126,42 +128,80 @@ fun RadioMoodScreen(vm: MusicViewModel) {
     val searchError by vm.radioSearchError.collectAsState()
     var selectedMood by remember { mutableStateOf<String?>(null) }
 
+    LaunchedEffect(Unit) {
+        val initialMood = moodChoices.first().first
+        selectedMood = initialMood
+        vm.searchRadioMood(initialMood)
+    }
+
     Column(Modifier.fillMaxSize()) {
         PageHeader("Radio", onBack = {})
         LazyColumn(contentPadding = PaddingValues(bottom = 210.dp)) {
             item {
                 Text(
-                    "Pilih suasana untuk mencari musik online",
+                    "Pilih suasana",
                     color = SubText,
                     fontSize = 13.sp,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                 )
             }
-            items(moodChoices, key = { it.first }) { (mood, _) ->
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(if (selectedMood == mood) Accent.copy(alpha = 0.22f) else Color.White.copy(.08f))
-                        .clickable {
-                            selectedMood = mood
-                            vm.searchRadioMood(mood)
-                        }
-                        .padding(horizontal = 14.dp, vertical = 13.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+            item {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Icon(Icons.Rounded.GraphicEq, null, tint = Accent)
-                    Spacer(Modifier.width(12.dp))
-                    Text(mood, color = Color.White, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                    Icon(Icons.Rounded.ChevronRight, null, tint = SubText)
+                    items(moodChoices, key = { it.first }) { (mood, _) ->
+                        val selected = selectedMood == mood
+                        Text(
+                            mood,
+                            color = if (selected) Color.Black else Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(if (selected) Accent else Color.White.copy(.12f))
+                                .clickable {
+                                    selectedMood = mood
+                                    vm.searchRadioMood(mood)
+                                }
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                        )
+                    }
                 }
             }
             selectedMood?.let { mood ->
                 item {
-                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                        Text("RADIO ONLINE", color = Accent, fontSize = 10.sp, letterSpacing = 1.5.sp)
-                        Text(mood, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 18.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("RADIO ONLINE", color = Accent, fontSize = 10.sp, letterSpacing = 1.5.sp)
+                            Text(mood, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        }
+                        listOf(
+                            Icons.AutoMirrored.Rounded.ViewList,
+                            Icons.Rounded.ViewAgenda,
+                            Icons.Rounded.GridView,
+                        ).forEachIndexed { index, icon ->
+                            Column(
+                                Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { vm.updateRadioLayout(index) }
+                                    .padding(horizontal = 5.dp, vertical = 3.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Icon(
+                                    icon,
+                                    contentDescription = listOf("Mendetail", "Ringkas", "Petak")[index],
+                                    tint = if (vm.radioLayout == index) Accent else SubText,
+                                )
+                                Text(
+                                    listOf("Detail", "Ringkas", "Petak")[index],
+                                    color = if (vm.radioLayout == index) Accent else SubText,
+                                    fontSize = 9.sp,
+                                )
+                            }
+                        }
                     }
                 }
                 when {
@@ -174,25 +214,80 @@ fun RadioMoodScreen(vm: MusicViewModel) {
                     radioResults.isEmpty() -> item {
                         Text("Tidak ada hasil online untuk suasana ini.", color = SubText, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
                     }
-                    else -> items(radioResults, key = { it.id }) { track ->
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 4.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(Color.White.copy(.08f))
-                                .clickable { vm.playItem(track, radioResults) }
-                                .padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RemoteImage(
-                                track.artworkUri?.toString().orEmpty(),
-                                Modifier.size(60.dp).clip(RoundedCornerShape(10.dp)),
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(track.title, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                Text(track.artist, color = SubText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    else -> {
+                        val tracks = radioResults.take(3)
+                        when (vm.radioLayout) {
+                            1 -> items(tracks, key = { it.id }) { track ->
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 3.dp)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(Color.White.copy(.07f))
+                                        .clickable { vm.playItem(track, radioResults) }
+                                        .padding(horizontal = 8.dp, vertical = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    RemoteImage(
+                                        track.artworkUri?.toString().orEmpty(),
+                                        Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)),
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(track.title, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(track.artist, color = SubText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                    Icon(Icons.Rounded.PlayArrow, null, tint = Accent)
+                                }
+                            }
+                            2 -> item {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    tracks.forEach { track ->
+                                        Column(
+                                            Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(14.dp))
+                                                .background(Color.White.copy(.07f))
+                                                .clickable { vm.playItem(track, radioResults) }
+                                                .padding(7.dp),
+                                        ) {
+                                            RemoteImage(
+                                                track.artworkUri?.toString().orEmpty(),
+                                                Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(9.dp)),
+                                            )
+                                            Spacer(Modifier.height(6.dp))
+                                            Text(track.title, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
+                                }
+                            }
+                            else -> item {
+                                LazyRow(
+                                    contentPadding = PaddingValues(horizontal = 16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    items(tracks, key = { it.id }) { track ->
+                                        Column(
+                                            Modifier
+                                                .width(220.dp)
+                                                .clip(RoundedCornerShape(16.dp))
+                                                .background(Color.White.copy(.07f))
+                                                .clickable { vm.playItem(track, radioResults) }
+                                                .padding(10.dp),
+                                        ) {
+                                            RemoteImage(
+                                                track.artworkUri?.toString().orEmpty(),
+                                                Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(10.dp)),
+                                            )
+                                            Spacer(Modifier.height(8.dp))
+                                            Text(track.title, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text(track.artist, color = SubText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

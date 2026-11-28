@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.schabi.newpipe.extractor.stream.StreamInfoItem
 
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -49,7 +50,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private var loadedOnce = false
     private var sleepJob: Job? = null
     private var onlineSearchJob: Job? = null
+    private var onlineSearchMoreJob: Job? = null
     private var radioSearchJob: Job? = null
+    private var homeSearchJob: Job? = null
+    private var onlineSearchSession: YouTubeApiSearch.TrackSearchSession? = null
     private var playbackRequestGeneration = 0
     private val indexedDownloadIds = mutableSetOf<String>()
     private var pendingOnlinePlayback: Pair<MediaItemModel, List<MediaItemModel>>? = null
@@ -91,6 +95,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var playerStyle by mutableIntStateOf(store.playerStyle)
         private set
+    var radioLayout by mutableIntStateOf(store.radioLayout)
+        private set
     var lockScreenEnabled by mutableStateOf(store.lockScreenEnabled)
         private set
     var sleepEndsAt by mutableLongStateOf(0L)
@@ -128,6 +134,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val _radioResults = MutableStateFlow<List<MediaItemModel>>(emptyList())
     val radioResults: StateFlow<List<MediaItemModel>> = _radioResults.asStateFlow()
 
+    private val _homeOnlineTracks = MutableStateFlow<List<MediaItemModel>>(emptyList())
+    val homeOnlineTracks: StateFlow<List<MediaItemModel>> = _homeOnlineTracks.asStateFlow()
+
+    private val _isSearchingHomeOnline = MutableStateFlow(false)
+    val isSearchingHomeOnline: StateFlow<Boolean> = _isSearchingHomeOnline.asStateFlow()
+
     private val _isSearchingRadio = MutableStateFlow(false)
     val isSearchingRadio: StateFlow<Boolean> = _isSearchingRadio.asStateFlow()
 
@@ -139,6 +151,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _onlineSearchError = MutableStateFlow<String?>(null)
     val onlineSearchError: StateFlow<String?> = _onlineSearchError.asStateFlow()
+
+    private val _isLoadingMoreOnline = MutableStateFlow(false)
+    val isLoadingMoreOnline: StateFlow<Boolean> = _isLoadingMoreOnline.asStateFlow()
+
+    private val _hasMoreOnline = MutableStateFlow(false)
+    val hasMoreOnline: StateFlow<Boolean> = _hasMoreOnline.asStateFlow()
+
+    private val _onlineSearchMoreError = MutableStateFlow<String?>(null)
+    val onlineSearchMoreError: StateFlow<String?> = _onlineSearchMoreError.asStateFlow()
 
     private val _searchVideosOnly = MutableStateFlow(false)
     val searchVideosOnly: StateFlow<Boolean> = _searchVideosOnly.asStateFlow()
@@ -597,6 +618,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         store.playerStyle = style
     }
 
+    fun updateRadioLayout(layout: Int) {
+        radioLayout = layout.coerceIn(0, 2)
+        store.radioLayout = radioLayout
+    }
+
     fun setLockScreen(enabled: Boolean) {
         lockScreenEnabled = enabled
         store.lockScreenEnabled = enabled
@@ -644,19 +670,36 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     fun searchYouTube(query: String) {
         onlineSearchJob?.cancel()
+        onlineSearchMoreJob?.cancel()
+        onlineSearchMoreJob = null
+        onlineSearchSession = null
         if (query.isBlank()) {
             clearOnlineSearch()
             return
         }
+        _onlineResults.value = emptyList()
+        _onlineSearchError.value = null
+        _onlineSearchMoreError.value = null
+        _hasMoreOnline.value = false
+        _isLoadingMoreOnline.value = false
         onlineSearchJob = viewModelScope.launch {
             val searchJob = coroutineContext[Job]
             _isSearchingOnline.value = true
-            _onlineSearchError.value = null
             try {
-                _onlineResults.value = YouTubeApiSearch.searchTracks(
+                val session = YouTubeApiSearch.searchSession(
                     query,
                     videosOnly = _searchVideosOnly.value,
                 )
+                var initialResults = session.initialResults
+                var skippedPages = 0
+                while (initialResults.isEmpty() && session.hasMore && skippedPages < 3) {
+                    initialResults = session.loadNextPage()
+                    skippedPages++
+                }
+                if (onlineSearchJob !== searchJob) return@launch
+                onlineSearchSession = session
+                _onlineResults.value = initialResults
+                _hasMoreOnline.value = session.hasMore
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -671,11 +714,52 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun loadMoreYouTubeSearch() {
+        val session = onlineSearchSession ?: return
+        if (_isSearchingOnline.value || _isLoadingMoreOnline.value || !_hasMoreOnline.value) return
+        onlineSearchMoreJob?.cancel()
+        onlineSearchMoreJob = viewModelScope.launch {
+            val searchJob = coroutineContext[Job]
+            _isLoadingMoreOnline.value = true
+            _onlineSearchMoreError.value = null
+            try {
+                var additions = emptyList<MediaItemModel>()
+                var attempts = 0
+                while (additions.isEmpty() && session.hasMore && attempts < 3) {
+                    val nextPage = session.loadNextPage()
+                    val existingIds = _onlineResults.value.mapTo(mutableSetOf()) { it.id }
+                    additions = nextPage.filter { existingIds.add(it.id) }
+                    attempts++
+                }
+                if (onlineSearchSession !== session) return@launch
+                _onlineResults.value = _onlineResults.value + additions
+                _hasMoreOnline.value = session.hasMore
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (onlineSearchSession === session) {
+                    _onlineSearchMoreError.value = e.message?.takeIf { it.isNotBlank() }
+                        ?: "Tidak bisa memuat hasil berikutnya. Coba lagi."
+                }
+            } finally {
+                if (onlineSearchMoreJob === searchJob) {
+                    _isLoadingMoreOnline.value = false
+                }
+            }
+        }
+    }
+
     fun clearOnlineSearch() {
         onlineSearchJob?.cancel()
         onlineSearchJob = null
+        onlineSearchMoreJob?.cancel()
+        onlineSearchMoreJob = null
+        onlineSearchSession = null
         _onlineResults.value = emptyList()
         _onlineSearchError.value = null
+        _onlineSearchMoreError.value = null
+        _hasMoreOnline.value = false
+        _isLoadingMoreOnline.value = false
         _isSearchingOnline.value = false
     }
 
@@ -699,6 +783,34 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+
+    fun loadHomeOnlineTracks() {
+        if (_homeOnlineTracks.value.isNotEmpty() || _isSearchingHomeOnline.value) return
+        homeSearchJob?.cancel()
+        homeSearchJob = viewModelScope.launch {
+            val searchJob = coroutineContext[Job]
+            _isSearchingHomeOnline.value = true
+            try {
+                _homeOnlineTracks.value = YouTubeApiSearch.searchTracks("popular songs music")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("MusicViewModel", "Gagal memuat pilihan online beranda.", e)
+                _homeOnlineTracks.value = emptyList()
+            } finally {
+                if (homeSearchJob === searchJob) {
+                    _isSearchingHomeOnline.value = false
+                }
+            }
+        }
+    }
+
+    fun clearHomeOnlineTracks() {
+        homeSearchJob?.cancel()
+        homeSearchJob = null
+        _homeOnlineTracks.value = emptyList()
+        _isSearchingHomeOnline.value = false
     }
 
     fun playYouTubeVideo(id: String, title: String, artist: String, thumbnail: String) {
@@ -879,7 +991,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun findItemById(id: String): MediaItemModel? {
-        return (_radioResults.value + _onlineResults.value + _localSongs.value + _localVideos.value + _downloadedItems.value)
+        return (_homeOnlineTracks.value + _radioResults.value + _onlineResults.value + _localSongs.value + _localVideos.value + _downloadedItems.value)
             .firstOrNull { it.id == id }
     }
 
@@ -905,33 +1017,56 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 }
 
+private fun List<StreamInfoItem>.toTrackResults(videosOnly: Boolean): List<MediaItemModel> =
+    mapNotNull { item ->
+        val rawUrl = item.url ?: return@mapNotNull null
+        val videoId = when {
+            "v=" in rawUrl -> rawUrl.substringAfter("v=").substringBefore("&")
+            "youtu.be/" in rawUrl -> rawUrl.substringAfter("youtu.be/").substringBefore("?")
+            "/shorts/" in rawUrl -> rawUrl.substringAfter("/shorts/").substringBefore("?")
+            else -> null
+        }?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+        val thumbUrl = item.thumbnails.maxByOrNull { it.width }?.url
+            ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+        val type = if (videosOnly) MediaType.YOUTUBE_VIDEO else MediaType.YOUTUBE_SONG
+
+        MediaItemModel(
+            id = "yt_$videoId",
+            title = item.name.orEmpty().ifBlank { "Unknown Track" },
+            artist = item.uploaderName.orEmpty().ifBlank { "YouTube" },
+            album = "YouTube",
+            durationMs = (item.duration * 1000L).coerceAtLeast(0L),
+            uri = Uri.parse(YouTubeStreamEngine.buildUriString(videoId, isVideo = videosOnly)),
+            artworkUri = Uri.parse(thumbUrl),
+            mediaType = type,
+            youtubeVideoId = videoId,
+        )
+    }
+
 private object YouTubeApiSearch {
+    class TrackSearchSession(
+        private val session: YouTubeStreamEngine.SearchSession,
+        private val videosOnly: Boolean,
+    ) {
+        val initialResults: List<MediaItemModel> =
+            session.initialItems.toTrackResults(videosOnly)
+
+        val hasMore: Boolean
+            get() = session.hasMore
+
+        suspend fun loadNextPage(): List<MediaItemModel> =
+            session.loadNextPage().toTrackResults(videosOnly)
+    }
+
+    suspend fun searchSession(query: String, videosOnly: Boolean): TrackSearchSession =
+        TrackSearchSession(
+            YouTubeStreamEngine.searchSession(query.trim(), videosOnly),
+            videosOnly,
+        )
+
     suspend fun searchTracks(query: String, videosOnly: Boolean = false): List<MediaItemModel> {
         if (query.isBlank()) return emptyList()
-        val items = YouTubeStreamEngine.search(query.trim(), videosOnly = videosOnly)
-        return items.mapNotNull { item ->
-            val rawUrl = item.url ?: return@mapNotNull null
-            val videoId = when {
-                "v=" in rawUrl -> rawUrl.substringAfter("v=").substringBefore("&")
-                "youtu.be/" in rawUrl -> rawUrl.substringAfter("youtu.be/").substringBefore("?")
-                "/shorts/" in rawUrl -> rawUrl.substringAfter("/shorts/").substringBefore("?")
-                else -> null
-            }?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            val thumbUrl = item.thumbnails.maxByOrNull { it.width }?.url
-                ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
-            val type = if (videosOnly) MediaType.YOUTUBE_VIDEO else MediaType.YOUTUBE_SONG
-
-            MediaItemModel(
-                id = "yt_$videoId",
-                title = item.name.orEmpty().ifBlank { "Unknown Track" },
-                artist = item.uploaderName.orEmpty().ifBlank { "YouTube" },
-                album = "YouTube",
-                durationMs = (item.duration * 1000L).coerceAtLeast(0L),
-                uri = Uri.parse(YouTubeStreamEngine.buildUriString(videoId, isVideo = videosOnly)),
-                artworkUri = Uri.parse(thumbUrl),
-                mediaType = type,
-                youtubeVideoId = videoId,
-            )
-        }
+        return YouTubeStreamEngine.search(query.trim(), videosOnly = videosOnly)
+            .toTrackResults(videosOnly)
     }
 }

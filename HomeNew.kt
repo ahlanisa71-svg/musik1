@@ -1,5 +1,9 @@
 package com.glassplayer.app.ui
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -8,6 +12,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -56,6 +61,7 @@ fun HomeScreen(
     onDetail: (DetailKey) -> Unit,
 ) {
     val ctx = LocalContext.current
+    val isOnline by rememberNetworkConnected(ctx)
     // Font tulisan tangan: pakai res/font/script_font.ttf bila ada, kalau tidak pakai cursive bawaan.
     val scriptFont = remember {
         val id = ctx.resources.getIdentifier("script_font", "font", ctx.packageName)
@@ -70,6 +76,12 @@ fun HomeScreen(
     val recent = remember(recents, all) { vm.songsOf(recents) }
     val mid = remember(all) { vm.listFor(DetailKey.Mix("mid")) }
     val popular = remember(all, vm.playCountsVersion) { vm.popular(8) }
+    val onlineTracks by vm.homeOnlineTracks.collectAsState()
+    val isLoadingOnline by vm.isSearchingHomeOnline.collectAsState()
+
+    LaunchedEffect(isOnline) {
+        if (isOnline) vm.loadHomeOnlineTracks() else vm.clearHomeOnlineTracks()
+    }
 
     val slides = remember(all, favs, newest, mid) {
         listOf(
@@ -116,6 +128,42 @@ fun HomeScreen(
                 Box(Modifier.width(56.dp).height(2.dp).background(Gold))
             }
         }
+        if (isOnline) {
+            item { SectionHead("Musik Online", "Cari lainnya") { onTab(4) } }
+            if (onlineTracks.isEmpty()) {
+                item {
+                    Text(
+                        if (isLoadingOnline) "Memuat lagu online…" else "Lagu online belum tersedia. Coba lagi nanti.",
+                        color = SubText,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    )
+                }
+            } else {
+                item {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(onlineTracks, key = { track -> track.id }) { track ->
+                            Column(
+                                Modifier
+                                    .width(148.dp)
+                                    .clickable { vm.playItem(track, onlineTracks) },
+                            ) {
+                                RemoteImage(
+                                    track.artworkUri?.toString().orEmpty(),
+                                    Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(20.dp)),
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Text(track.title, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(track.artist, color = SubText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(22.dp))
+                }
+            }
+        } else {
         // Kartu spesial
         if (slides.isNotEmpty()) item {
             val pager = rememberPagerState { slides.size }
@@ -270,7 +318,45 @@ fun HomeScreen(
                 )
             }
         }
+        }
     }
+}
+
+@Composable
+private fun rememberNetworkConnected(context: Context): State<Boolean> {
+    val connectivityManager = remember(context) {
+        context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    }
+    val connected = remember(connectivityManager) {
+        mutableStateOf(hasValidatedInternet(connectivityManager))
+    }
+
+    DisposableEffect(connectivityManager) {
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                connected.value = hasValidatedInternet(connectivityManager)
+            }
+
+            override fun onLost(network: Network) {
+                connected.value = hasValidatedInternet(connectivityManager)
+            }
+
+            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                connected.value = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            }
+        }
+        connectivityManager.registerDefaultNetworkCallback(callback)
+        onDispose { connectivityManager.unregisterNetworkCallback(callback) }
+    }
+    return connected
+}
+
+private fun hasValidatedInternet(connectivityManager: ConnectivityManager): Boolean {
+    val network = connectivityManager.activeNetwork ?: return false
+    val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+    return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
 }
 
 @Composable

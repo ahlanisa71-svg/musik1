@@ -16,9 +16,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -83,7 +86,45 @@ fun NowPlayingScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        GlassBackground()
+        if (videoMode) {
+            GlassBackground()
+        } else {
+            val artwork = currentItem?.artworkUri
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val imageHeight = maxHeight
+                val blurHeight = maxHeight * 0.68f
+                NowPlayingArtwork(song, artwork, Modifier.fillMaxSize())
+                Box(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(blurHeight)
+                        .clipToBounds(),
+                ) {
+                    NowPlayingArtwork(
+                        song,
+                        artwork,
+                        Modifier
+                            .fillMaxWidth()
+                            .height(imageHeight)
+                            .offset(y = -(imageHeight - blurHeight))
+                            .blur(24.dp),
+                    )
+                }
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                0f to Color.Black.copy(alpha = 0.02f),
+                                0.38f to Color.Black.copy(alpha = 0.03f),
+                                0.68f to Color.Black.copy(alpha = 0.72f),
+                                1f to Color.Black.copy(alpha = 0.96f),
+                            )
+                        ),
+                )
+            }
+        }
 
         if (isFullScreenLandscape && videoMode) {
             Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
@@ -106,11 +147,6 @@ fun NowPlayingScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(Color.Black.copy(alpha = 0.35f), Color.Black.copy(alpha = 0.78f))
-                        )
-                    )
                     .statusBarsPadding()
                     .navigationBarsPadding()
                     .padding(horizontal = if (videoMode) 12.dp else 24.dp, vertical = 12.dp),
@@ -325,6 +361,31 @@ fun NowPlayingScreen(
 
                 Spacer(Modifier.height(14.dp))
             }
+        }
+    }
+}
+
+@Composable
+private fun NowPlayingArtwork(
+    song: Song,
+    artwork: android.net.Uri?,
+    modifier: Modifier,
+) {
+    Box(modifier) {
+        ArtImage(
+            song = song,
+            modifier = Modifier.fillMaxSize(),
+            shape = RectangleShape,
+            seed = song.title,
+            iconSize = 120.dp,
+        )
+        if (artwork != null) {
+            AsyncImage(
+                model = artwork,
+                contentDescription = "Sampul ${song.title}",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
         }
     }
 }

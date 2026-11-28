@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -107,6 +108,8 @@ import androidx.core.content.ContextCompat
 import com.glassplayer.app.DetailKey
 import com.glassplayer.app.MusicViewModel
 import com.glassplayer.app.data.Song
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 private data class Nav(val detail: DetailKey?, val page: Page?, val tab: Int)
@@ -1484,7 +1487,11 @@ fun SearchScreen(
     val activeDownloads by vm.activeDownloads.collectAsState()
     val searchingOnline by vm.isSearchingOnline.collectAsState()
     val onlineSearchError by vm.onlineSearchError.collectAsState()
+    val loadingMoreOnline by vm.isLoadingMoreOnline.collectAsState()
+    val hasMoreOnline by vm.hasMoreOnline.collectAsState()
+    val onlineSearchMoreError by vm.onlineSearchMoreError.collectAsState()
     val videosOnly by vm.searchVideosOnly.collectAsState()
+    val listState = rememberLazyListState()
     val q = query.trim()
     val results = remember(q, vm.songs) {
         if (q.isEmpty()) emptyList()
@@ -1495,6 +1502,7 @@ fun SearchScreen(
     val history = vm.songsOf(vm.searchHistory)
 
     LaunchedEffect(q, videosOnly) {
+        listState.scrollToItem(0)
         if (q.isBlank()) {
             vm.clearOnlineSearch()
         } else {
@@ -1503,7 +1511,28 @@ fun SearchScreen(
         }
     }
 
-    LazyColumn(contentPadding = PaddingValues(top = 4.dp, bottom = 240.dp)) {
+    LaunchedEffect(
+        q,
+        videosOnly,
+        onlineResults.size,
+        searchingOnline,
+        loadingMoreOnline,
+        hasMoreOnline,
+        onlineSearchMoreError,
+    ) {
+        if (q.isBlank() || onlineResults.isEmpty() || searchingOnline ||
+            loadingMoreOnline || !hasMoreOnline || onlineSearchMoreError != null
+        ) return@LaunchedEffect
+
+        val reachedEnd = androidx.compose.runtime.snapshotFlow {
+            val layout = listState.layoutInfo
+            val lastVisible = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
+            layout.totalItemsCount > 0 && lastVisible >= layout.totalItemsCount - 4
+        }.distinctUntilChanged().first { it }
+        if (reachedEnd) vm.loadMoreYouTubeSearch()
+    }
+
+    LazyColumn(state = listState, contentPadding = PaddingValues(top = 4.dp, bottom = 240.dp)) {
         item { TabHeader("Cari", "Cari di perangkat dan YouTube", onOpenDrawer) }
         if (q.isEmpty()) {
             if (history.isNotEmpty()) {
@@ -1668,6 +1697,29 @@ fun SearchScreen(
                                 contentDescription = "Unduh ${item.title}",
                                 tint = if (download?.isCompleted == true) Accent else Color.White,
                             )
+                        }
+                    }
+                }
+            }
+            if (onlineResults.isNotEmpty() && (hasMoreOnline || loadingMoreOnline || onlineSearchMoreError != null)) {
+                item {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        when {
+                            loadingMoreOnline -> CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = Accent,
+                                strokeWidth = 2.dp,
+                            )
+                            onlineSearchMoreError != null -> TextButton(onClick = { vm.loadMoreYouTubeSearch() }) {
+                                Text("Coba muat hasil lagi", color = Accent)
+                            }
+                            hasMoreOnline -> TextButton(onClick = { vm.loadMoreYouTubeSearch() }) {
+                                Text("Muat hasil lainnya", color = Accent)
+                            }
                         }
                     }
                 }
