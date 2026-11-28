@@ -7,7 +7,6 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.media.MediaScannerConnection
 import android.os.Build
 import android.os.Environment
 import android.os.IBinder
@@ -48,19 +47,39 @@ object YouTubeDownloader {
 
     private val cancelledIds = ConcurrentHashMap.newKeySet<String>()
 
-    fun downloadDirectory(): File {
-        val musicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
-        return File(musicDir, "MusixDownloads").apply { mkdirs() }
+    fun downloadDirectory(context: Context): File {
+        val musicDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
+        return File(musicDir, "MusixDownloads").apply {
+            if (!exists() && !mkdirs()) throw IOException("Folder unduhan tidak bisa dibuat.")
+            if (!isDirectory || !canWrite()) throw IOException("Folder unduhan tidak bisa ditulis.")
+        }
     }
 
-    fun isDownloaded(videoId: String): Boolean {
-        val dir = downloadDirectory()
-        return dir.listFiles()?.any { it.name.contains("[$videoId]") && !it.name.endsWith(".part") } == true
+    fun downloadedAudioFiles(context: Context): List<File> {
+        val dir = downloadDirectory(context)
+        return dir.listFiles()?.filter {
+            !it.name.endsWith(".part", ignoreCase = true) &&
+                !it.extension.equals("mp4", ignoreCase = true) &&
+                it.isFile
+        }.orEmpty()
     }
 
-    fun getDownloadedFile(videoId: String): File? {
-        val dir = downloadDirectory()
-        return dir.listFiles()?.firstOrNull { it.name.contains("[$videoId]") && !it.name.endsWith(".part") }
+    fun isDownloaded(context: Context, videoId: String, asVideo: Boolean = false): Boolean {
+        val dir = downloadDirectory(context)
+        return dir.listFiles()?.any {
+            it.name.contains("[$videoId]") &&
+                !it.name.endsWith(".part") &&
+                it.extension.equals("mp4", ignoreCase = true) == asVideo
+        } == true
+    }
+
+    fun getDownloadedFile(context: Context, videoId: String, asVideo: Boolean = false): File? {
+        val dir = downloadDirectory(context)
+        return dir.listFiles()?.firstOrNull {
+            it.name.contains("[$videoId]") &&
+                !it.name.endsWith(".part") &&
+                it.extension.equals("mp4", ignoreCase = true) == asVideo
+        }
     }
 
     fun startDownload(context: Context, videoId: String, title: String, asVideo: Boolean = false) {
@@ -95,14 +114,14 @@ object YouTubeDownloader {
             .take(60)
             .trim()
 
-        val streamUrl = if (asVideo && !resolved.videoUrl.isNullOrBlank()) {
-            resolved.videoUrl
+        val streamUrl = if (asVideo) {
+            resolved.videoUrl ?: throw IOException("Stream video tidak tersedia untuk video ini.")
         } else {
             resolved.audioUrl
         }
-        val ext = if (asVideo && !resolved.videoUrl.isNullOrBlank()) "mp4" else resolved.audioExtension
+        val ext = if (asVideo) "mp4" else resolved.audioExtension
 
-        val dir = downloadDirectory()
+        val dir = downloadDirectory(context)
         val partFile = File(dir, "$safeTitle [$videoId].$ext.part")
         val finalFile = File(dir, "$safeTitle [$videoId].$ext")
 
@@ -161,13 +180,6 @@ object YouTubeDownloader {
             if (!partFile.renameTo(finalFile)) {
                 throw IOException("Failed to finalize downloaded file")
             }
-
-            MediaScannerConnection.scanFile(
-                context.applicationContext,
-                arrayOf(finalFile.absolutePath),
-                null,
-                null
-            )
 
             updateTask(videoId) { DownloadTaskState(videoId, safeTitle, 1f, isCompleted = true) }
             finalFile

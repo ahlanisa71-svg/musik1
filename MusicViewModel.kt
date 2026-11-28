@@ -1,7 +1,9 @@
 package com.glassplayer.app
 
 import android.app.Application
+import android.Manifest
 import android.content.ComponentName
+import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -35,6 +37,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -46,9 +49,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private var loadedOnce = false
     private var sleepJob: Job? = null
     private var onlineSearchJob: Job? = null
+    private var playbackRequestGeneration = 0
+    private val indexedDownloadIds = mutableSetOf<String>()
+    private var pendingOnlinePlayback: Pair<MediaItemModel, List<MediaItemModel>>? = null
 
     private val queueList = mutableStateListOf<Song>()
     private val playCounts = mutableStateMapOf<String, Int>()
+    private val _player = MutableStateFlow<Player?>(null)
+    val player: StateFlow<Player?> = _player.asStateFlow()
 
     val allSongs = mutableStateListOf<Song>()
     val songs: List<Song>
@@ -151,8 +159,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         AppLang.load(appCtx)
-        AppTheme.index = store.themeIndex
-        AppTheme.pureBlack = store.pureBlack
+        AppTheme.load(appCtx)
         AudioFx.load(appCtx)
 
         favorites.addAll(store.loadList("favorites"))
@@ -162,6 +169,22 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
         connectPlayer()
         startPositionTicker()
+        viewModelScope.launch {
+            YouTubeDownloader.activeDownloads.collect { tasks ->
+                val hasNewDownloads = tasks.values.any { task ->
+                    task.isCompleted && indexedDownloadIds.add(task.videoId)
+                }
+                if (hasNewDownloads && loadedOnce) loadSongs()
+            }
+        }
+        val audioPermission = if (android.os.Build.VERSION.SDK_INT >= 33) {
+            Manifest.permission.READ_MEDIA_AUDIO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        if (appCtx.checkSelfPermission(audioPermission) == PackageManager.PERMISSION_GRANTED) {
+            ensureLoaded()
+        }
     }
 
     fun getPlayer(): Player? = controller
@@ -173,6 +196,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             runCatching {
                 val mc = future.get()
                 controller = mc
+                _player.value = mc
                 mc.setPlaybackSpeed(playbackSpeed)
                 mc.repeatMode = repeatMode
                 isPlaying = mc.isPlaying
@@ -202,6 +226,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                 })
+                pendingOnlinePlayback?.let { pending ->
+                    pendingOnlinePlayback = null
+                    playItem(pending.first, pending.second)
+                }
             }
         }, MoreExecutors.directExecutor())
     }
@@ -235,10 +263,19 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadSongs() {
         viewModelScope.launch {
+            loadedOnce = true
             loading = true
             val scanned = MediaRepository.scan(appCtx)
             val manual = store.loadExtra()
-            val merged = (scanned + manual).distinctBy { it.uri }
+            val downloaded = withContext(Dispatchers.IO) {
+                YouTubeDownloader.downloadedAudioFiles(appCtx).mapNotNull { file ->
+                    MediaRepository.readFromUri(appCtx, Uri.fromFile(file))?.copy(
+                        album = "MusixDownloads",
+                        folder = "MusixDownloads",
+                    )
+                }
+            }
+            val merged = (scanned + manual + downloaded).distinctBy { it.uri }
             allSongs.clear()
             allSongs.addAll(merged)
             _localSongs.value = merged.map { it.toMediaItemModel() }
@@ -343,6 +380,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     fun playList(list: List<Song>, startIndex: Int = 0) {
         if (list.isEmpty()) return
+        pendingOnlinePlayback = null
         val idx = startIndex.coerceIn(0, list.lastIndex)
         queueList.clear()
         queueList.addAll(list)
@@ -649,7 +687,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             currentId = item.uri.toString()
             durationMs = item.durationMs
         }
-        val mc = controller ?: return
+        val mc = controller ?: run {
+            pendingOnlinePlayback = item to queue
+            return
+        }
+        pendingOnlinePlayback = null
         val startIndex = queue.indexOfFirst { it.id == item.id }.coerceAtLeast(0)
         val mediaItems = queue.map { m ->
             MediaItem.Builder()
@@ -664,9 +706,38 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 .build()
         }
-        mc.setMediaItems(mediaItems, startIndex, 0L)
-        mc.prepare()
-        mc.play()
+        val generation = ++playbackRequestGeneration
+        val play = {
+            if (generation == playbackRequestGeneration && controller === mc) {
+                mc.setMediaItems(mediaItems, startIndex, 0L)
+                mc.prepare()
+                mc.play()
+            }
+        }
+        if (item.mediaType == MediaType.YOUTUBE_VIDEO) {
+            val videoId = item.youtubeVideoId
+                ?: YouTubeStreamEngine.extractVideoId(item.uri.toString())
+                ?: return
+            viewModelScope.launch {
+                try {
+                    YouTubeStreamEngine.resolve(videoId)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (generation == playbackRequestGeneration) {
+                        android.widget.Toast.makeText(
+                            appCtx,
+                            "Gagal memuat stream video: ${e.message ?: "coba lagi"}",
+                            android.widget.Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                    return@launch
+                }
+                play()
+            }
+        } else {
+            play()
+        }
     }
 
     fun togglePlayPause() = togglePlay()
@@ -684,34 +755,66 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleVideoMode() {
-        YouTubeStreamEngine.toggleVideoMode()
         val item = _currentItem.value ?: return
         val mc = controller ?: return
-        if (item.isYouTube && mc.mediaItemCount > 0) {
-            val pos = mc.currentPosition.coerceAtLeast(0L)
-            val wasPlaying = mc.isPlaying
-            val idx = mc.currentMediaItemIndex
-            val mi = MediaItem.Builder()
-                .setMediaId(item.id)
-                .setUri(item.uri)
-                .setMediaMetadata(
-                    MediaMetadata.Builder()
-                        .setTitle(item.title)
-                        .setArtist(item.artist)
-                        .setArtworkUri(item.artworkUri)
-                        .build()
-                )
-                .build()
-            mc.replaceMediaItem(idx, mi)
-            mc.seekTo(idx, pos)
-            mc.prepare()
-            if (wasPlaying) mc.play()
+        if (!item.isYouTube || mc.mediaItemCount == 0) return
+
+        val videoId = item.youtubeVideoId
+            ?: YouTubeStreamEngine.extractVideoId(item.uri.toString())
+            ?: return
+        val videoMode = !YouTubeStreamEngine.videoMode.value
+        val generation = ++playbackRequestGeneration
+
+        viewModelScope.launch {
+            try {
+                if (videoMode) YouTubeStreamEngine.resolve(videoId)
+                if (generation != playbackRequestGeneration || controller !== mc) return@launch
+
+                val idx = mc.currentMediaItemIndex
+                if (idx !in 0 until mc.mediaItemCount || mc.currentMediaItem?.mediaId != item.id) return@launch
+                val pos = mc.currentPosition.coerceAtLeast(0L)
+                val wasPlaying = mc.isPlaying
+                val mediaItem = MediaItem.Builder()
+                    .setMediaId(item.id)
+                    .setUri(YouTubeStreamEngine.buildUriString(videoId, isVideo = videoMode))
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setTitle(item.title)
+                            .setArtist(item.artist)
+                            .setArtworkUri(item.artworkUri)
+                            .build()
+                    )
+                    .build()
+
+                YouTubeStreamEngine.setVideoMode(videoMode)
+                mc.replaceMediaItem(idx, mediaItem)
+                mc.seekTo(idx, pos)
+                mc.prepare()
+                if (wasPlaying) mc.play()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (generation == playbackRequestGeneration) {
+                    android.widget.Toast.makeText(
+                        appCtx,
+                        "Gagal memuat stream video: ${e.message ?: "coba lagi"}",
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                }
+            }
         }
     }
 
-    fun downloadCurrentOrItem(item: MediaItemModel, asVideo: Boolean = false) {
+    fun downloadCurrentOrItem(
+        item: MediaItemModel,
+        asVideo: Boolean = item.mediaType == MediaType.YOUTUBE_VIDEO,
+    ) {
         val vid = item.youtubeVideoId ?: return
-        YouTubeDownloader.startDownload(appCtx, vid, item.title, asVideo = asVideo)
+        downloadYouTube(vid, item.title, asVideo)
+    }
+
+    fun downloadYouTube(videoId: String, title: String, asVideo: Boolean = false) {
+        YouTubeDownloader.startDownload(appCtx, videoId, title, asVideo = asVideo)
     }
 
     private fun loadLyricsFor(item: MediaItemModel) {

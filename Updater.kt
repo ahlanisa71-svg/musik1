@@ -1,5 +1,8 @@
 package com.glassplayer.app.data
 
+import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
@@ -7,8 +10,12 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.FileProvider
+import androidx.core.content.ContextCompat
 import com.glassplayer.app.BuildConfig
+import com.glassplayer.app.MainActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -48,6 +55,7 @@ object Updater {
             conn.setRequestProperty("User-Agent", "Musix-Updater")
             val code = conn.responseCode
             if (code == 404) {
+                markSuccessfulCheck(ctx)
                 return@withContext UpdateCheck.Failed("Belum ada rilis di GitHub (atau repositori bersifat privat).")
             }
             if (code != 200) return@withContext UpdateCheck.Failed("GitHub membalas kode $code. Coba lagi nanti.")
@@ -59,7 +67,10 @@ object Updater {
             val remoteName = m.groupValues[1]
             val remoteCode = m.groupValues[2].toIntOrNull() ?: 0
             val current = currentCode(ctx)
-            if (remoteCode <= current) return@withContext UpdateCheck.UpToDate
+            if (remoteCode <= current) {
+                markSuccessfulCheck(ctx)
+                return@withContext UpdateCheck.UpToDate
+            }
 
             val assets = j.optJSONArray("assets")
             var url = ""
@@ -75,6 +86,7 @@ object Updater {
                 }
             }
             if (url.isEmpty()) return@withContext UpdateCheck.Failed("Rilis terbaru tidak memuat file APK.")
+            markSuccessfulCheck(ctx)
             UpdateCheck.Available(UpdateInfo(remoteName, remoteCode, j.optString("body").trim(), url, size))
         } catch (e: Exception) {
             UpdateCheck.Failed("Tidak bisa terhubung ke GitHub. Periksa koneksi internet.")
@@ -86,8 +98,69 @@ object Updater {
         val sp = ctx.getSharedPreferences("musix_update", Context.MODE_PRIVATE)
         val now = System.currentTimeMillis()
         if (now - sp.getLong("last_check", 0L) < 6 * 60 * 60 * 1000L) return false
-        sp.edit().putLong("last_check", now).apply()
         return true
+    }
+
+    fun notifyUpdateAvailable(ctx: Context, info: UpdateInfo) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) return
+
+        val notifications = NotificationManagerCompat.from(ctx)
+        if (!notifications.areNotificationsEnabled()) return
+
+        val preferences = ctx.getSharedPreferences("musix_update", Context.MODE_PRIVATE)
+        if (info.versionCode <= preferences.getInt("last_notified_version", 0)) return
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val systemNotifications = ctx.getSystemService(NotificationManager::class.java)
+            val channel = systemNotifications.getNotificationChannel(UPDATE_CHANNEL_ID)
+            if (channel?.importance == NotificationManager.IMPORTANCE_NONE) return
+            if (channel == null) {
+                systemNotifications.createNotificationChannel(
+                    NotificationChannel(
+                        UPDATE_CHANNEL_ID,
+                        "Pembaruan aplikasi",
+                        NotificationManager.IMPORTANCE_DEFAULT,
+                    ).apply {
+                        description = "Pemberitahuan saat pembaruan Musix tersedia."
+                    }
+                )
+            }
+        }
+
+        val openUpdater = Intent(ctx, MainActivity::class.java)
+            .putExtra(MainActivity.EXTRA_OPEN_UPDATER, true)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val pendingIntent = android.app.PendingIntent.getActivity(
+            ctx,
+            UPDATE_PENDING_INTENT_ID,
+            openUpdater,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(ctx, UPDATE_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setContentTitle("Pembaruan Musix tersedia")
+            .setContentText("Versi ${info.versionName} tersedia. Ketuk untuk mengunduh.")
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .build()
+
+        try {
+            notifications.notify(UPDATE_NOTIFICATION_ID, notification)
+            preferences.edit().putInt("last_notified_version", info.versionCode).apply()
+        } catch (e: SecurityException) {
+            android.util.Log.w("Updater", "Tidak dapat menampilkan notifikasi pembaruan.", e)
+        }
+    }
+
+    private fun markSuccessfulCheck(ctx: Context) {
+        ctx.getSharedPreferences("musix_update", Context.MODE_PRIVATE)
+            .edit()
+            .putLong("last_check", System.currentTimeMillis())
+            .apply()
     }
 
     @Suppress("DEPRECATION")
@@ -199,4 +272,8 @@ object Updater {
         } else {
             signatures.orEmpty().map { it.toCharsString() }.toSet()
         }
+
+    private const val UPDATE_CHANNEL_ID = "musix_updates"
+    private const val UPDATE_NOTIFICATION_ID = 2043
+    private const val UPDATE_PENDING_INTENT_ID = 2043
 }

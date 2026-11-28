@@ -43,10 +43,6 @@ object MediaRepository {
                     if (dur in 1..4999) continue
                     val id = c.getLong(iId)
                     val path = c.getString(iData).orEmpty()
-                    if (path.isNotEmpty()) {
-                        val file = java.io.File(path)
-                        if (!file.exists() || file.length() == 0L) continue
-                    }
                     val name = c.getString(iName).orEmpty().substringBeforeLast('.')
                     val title = c.getString(iTitle)?.takeIf { it.isNotBlank() } ?: name.ifBlank { "Tanpa judul" }
                     val artist = c.getString(iArtist)?.takeIf { it.isNotBlank() && it != "<unknown>" } ?: UNKNOWN_ARTIST

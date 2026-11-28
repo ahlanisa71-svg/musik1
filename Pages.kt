@@ -70,6 +70,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.glassplayer.app.BuildConfig
 import com.glassplayer.app.MusicViewModel
 import com.glassplayer.app.R
 import com.glassplayer.app.data.Song
@@ -92,7 +93,7 @@ sealed interface Page {
 }
 
 const val APP_NAME = "Musix"
-const val APP_VERSION = "1.9.12"
+val APP_VERSION = BuildConfig.VERSION_NAME
 const val CONTACT_EMAIL = "rifqihisyammuddin429@gmail.com"
 const val IG_URL = "https://www.instagram.com/rifsy_am"
 const val IG_NAME = "rifsy_am"

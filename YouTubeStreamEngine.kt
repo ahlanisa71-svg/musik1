@@ -30,6 +30,7 @@ data class ResolvedYouTubeMedia(
     val audioExtension: String,
     val audioBitrateKbps: Int,
     val videoUrl: String?,
+    val videoOnly: Boolean,
     val videoResolution: String?
 )
 
@@ -121,6 +122,13 @@ object YouTubeStreamEngine {
         return uriString.substringAfterLast("/").substringBefore("?").takeIf { it.isNotBlank() }
     }
 
+    fun isVideoUri(uriString: String): Boolean = uriString.startsWith("$SCHEME://video/")
+
+    fun cached(videoId: String): ResolvedYouTubeMedia? {
+        val (savedAt, media) = cache[videoId] ?: return null
+        return media.takeIf { System.currentTimeMillis() - savedAt < CACHE_TTL_MS }
+    }
+
     suspend fun search(query: String, videosOnly: Boolean = false): List<StreamInfoItem> =
         withContext(Dispatchers.IO) {
             ensureInitialized()
@@ -147,14 +155,21 @@ object YouTubeStreamEngine {
                 .maxByOrNull { it.averageBitrate }
                 ?: error("No playable audio stream found for $videoId")
 
-            val bestVideo = info.videoStreams
-                .filter { !it.content.isNullOrEmpty() }
-                .sortedByDescending { it.height }
-                .firstOrNull { it.height <= 1080 }
-                ?: info.videoOnlyStreams
-                    .filter { !it.content.isNullOrEmpty() }
-                    .sortedByDescending { it.height }
-                    .firstOrNull { it.height <= 1080 }
+            val muxedVideos = info.videoStreams.filter {
+                !it.isVideoOnly && !it.content.isNullOrEmpty() && it.height <= 1080
+            }
+            val mp4Videos = muxedVideos.filter { it.format?.suffix.equals("mp4", ignoreCase = true) }
+            val videoCandidates = mp4Videos.ifEmpty { muxedVideos }
+            val bestMuxedVideo = videoCandidates.maxByOrNull { it.height }
+            val videoOnlyStreams = info.videoOnlyStreams.filter {
+                !it.content.isNullOrEmpty() && it.height <= 1080
+            }
+            val mp4VideoOnlyStreams = videoOnlyStreams.filter {
+                it.format?.suffix.equals("mp4", ignoreCase = true)
+            }
+            val bestVideoOnly = mp4VideoOnlyStreams.ifEmpty { videoOnlyStreams }
+                .maxByOrNull { it.height }
+            val bestVideo = bestMuxedVideo ?: bestVideoOnly
 
             val thumb = info.thumbnails.maxByOrNull { it.width * it.height }?.url
                 ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
@@ -169,6 +184,7 @@ object YouTubeStreamEngine {
                 audioExtension = bestAudio.format?.suffix ?: "m4a",
                 audioBitrateKbps = bestAudio.averageBitrate.coerceAtLeast(128),
                 videoUrl = bestVideo?.content,
+                videoOnly = bestMuxedVideo == null && bestVideoOnly != null,
                 videoResolution = bestVideo?.resolution
             )
 

@@ -108,14 +108,14 @@ val LocalScreenReady = compositionLocalOf { true }
 fun Modifier.cascade(index: Int): Modifier = composed {
     val born = LocalScreenBorn.current
     val ready = LocalScreenReady.current
-    val animate = remember { index < 14 && SystemClock.uptimeMillis() - born < 700L }
+    val animate = remember { index < 10 && SystemClock.uptimeMillis() - born < 500L }
     val a = remember { Animatable(if (animate) 0f else 1f) }
     LaunchedEffect(ready) {
-        if (animate && ready) a.animateTo(1f, tween(420, delayMillis = index * 55, easing = FastOutSlowInEasing))
+        if (animate && ready) a.animateTo(1f, tween(180, delayMillis = index * 12, easing = FastOutSlowInEasing))
     }
     graphicsLayer {
         alpha = a.value
-        translationY = (1f - a.value) * -32.dp.toPx()
+        translationY = (1f - a.value) * -12.dp.toPx()
     }
 }
 

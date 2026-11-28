@@ -63,6 +63,7 @@ fun NowPlayingScreen(
     val lyrics by vm.currentLyrics.collectAsState()
     val isLoadingLyrics by vm.isLoadingLyrics.collectAsState()
     val videoMode by vm.videoMode.collectAsState()
+    val player by vm.player.collectAsState()
     val currentItem by vm.currentItem.collectAsState()
     val fav = song.uri in vm.favorites
 
@@ -85,8 +86,9 @@ fun NowPlayingScreen(
         if (isFullScreenLandscape && videoMode) {
             Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
                 ExoVideoSurface(
-                    player = vm.getPlayer(),
+                    player = player,
                     modifier = Modifier.fillMaxSize(),
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT,
                 )
                 IconButton(
                     onClick = { isFullScreenLandscape = false },
@@ -109,7 +111,7 @@ fun NowPlayingScreen(
                     )
                     .statusBarsPadding()
                     .navigationBarsPadding()
-                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                    .padding(horizontal = if (videoMode) 12.dp else 24.dp, vertical = 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Row(
@@ -152,7 +154,7 @@ fun NowPlayingScreen(
                                     .background(Color.Black),
                             ) {
                                 ExoVideoSurface(
-                                    player = vm.getPlayer(),
+                                    player = player,
                                     modifier = Modifier.fillMaxSize(),
                                 )
                                 IconButton(
@@ -162,7 +164,7 @@ fun NowPlayingScreen(
                                         .padding(8.dp)
                                         .background(Color.Black.copy(alpha = 0.55f), CircleShape),
                                 ) {
-                                    Icon(Icons.Rounded.Fullscreen, contentDescription = "Layar Penuh", tint = Color.White)
+                                    Icon(Icons.Rounded.ScreenRotation, contentDescription = "Putar ke landscape", tint = Color.White)
                                 }
                             }
                         }
@@ -317,12 +319,16 @@ fun NowPlayingScreen(
 
 @OptIn(UnstableApi::class)
 @Composable
-private fun ExoVideoSurface(player: Player?, modifier: Modifier = Modifier) {
+private fun ExoVideoSurface(
+    player: Player?,
+    modifier: Modifier = Modifier,
+    resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT,
+) {
     AndroidView(
         factory = { ctx ->
             PlayerView(ctx).apply {
                 useController = false
-                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                this.resizeMode = resizeMode
                 layoutParams = FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -331,6 +337,7 @@ private fun ExoVideoSurface(player: Player?, modifier: Modifier = Modifier) {
             }
         },
         update = { view ->
+            view.resizeMode = resizeMode
             if (view.player !== player) {
                 view.player = player
             }

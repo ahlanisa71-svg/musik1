@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
@@ -31,10 +32,12 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 
 val Accent = Color(0xFFFFE9A8)
 val SubText = Color.White.copy(alpha = 0.78f)
@@ -84,14 +87,48 @@ val Palettes = listOf(
     ),
 )
 
+val CUSTOM_THEME_INDEX = Palettes.size
+
 /** Tema warna aktif (disimpan di Store). */
 object AppTheme {
     var index by androidx.compose.runtime.mutableIntStateOf(0)
-    val palette: Palette get() = Palettes[index.coerceIn(0, Palettes.lastIndex)]
+    var customGradientTop by androidx.compose.runtime.mutableIntStateOf(0xFF6FA8D6.toInt())
+        private set
+    var customGradientBottom by androidx.compose.runtime.mutableIntStateOf(0xFF080F1A.toInt())
+        private set
+    var backgroundImageUri by androidx.compose.runtime.mutableStateOf<String?>(null)
+        private set
+    var backgroundBlurDp by androidx.compose.runtime.mutableFloatStateOf(8f)
+        private set
+    val palette: Palette get() = paletteAt(index)
+    val themeCount: Int get() = Palettes.size + 1
 
     /** Layar OLED: latar hitam murni. Hanya berlaku untuk tema gelap. */
     var pureBlack by androidx.compose.runtime.mutableStateOf(false)
     val pureBlackActive: Boolean get() = pureBlack && palette.dark
+
+    fun paletteAt(i: Int): Palette {
+        if (i == CUSTOM_THEME_INDEX) {
+            val top = Color(customGradientTop)
+            val bottom = Color(customGradientBottom)
+            return Palette(
+                "Custom",
+                listOf(top, top, bottom, bottom),
+                listOf(top.copy(alpha = 0.65f), bottom.copy(alpha = 0.55f), top.copy(alpha = 0.35f), bottom.copy(alpha = 0.45f)),
+            )
+        }
+        return Palettes[i.coerceIn(0, Palettes.lastIndex)]
+    }
+
+    fun load(ctx: android.content.Context) {
+        val store = com.glassplayer.app.data.Store(ctx.applicationContext)
+        index = store.themeIndex.coerceIn(0, themeCount - 1)
+        pureBlack = store.pureBlack
+        customGradientTop = store.customGradientTop
+        customGradientBottom = store.customGradientBottom
+        backgroundImageUri = store.backgroundImageUri.takeIf { it.isNotBlank() }
+        backgroundBlurDp = store.backgroundBlurDp.coerceIn(0f, 20f)
+    }
 
     fun setPureBlack(ctx: android.content.Context, v: Boolean) {
         pureBlack = v
@@ -105,8 +142,29 @@ object AppTheme {
     }
 
     fun set(ctx: android.content.Context, i: Int) {
-        index = i
-        com.glassplayer.app.data.Store(ctx.applicationContext).themeIndex = i
+        index = i.coerceIn(0, themeCount - 1)
+        com.glassplayer.app.data.Store(ctx.applicationContext).themeIndex = index
+    }
+
+    fun setCustomGradient(ctx: android.content.Context, top: Int, bottom: Int) {
+        customGradientTop = top
+        customGradientBottom = bottom
+        index = CUSTOM_THEME_INDEX
+        com.glassplayer.app.data.Store(ctx.applicationContext).apply {
+            customGradientTop = top
+            customGradientBottom = bottom
+            themeIndex = index
+        }
+    }
+
+    fun setBackgroundImage(ctx: android.content.Context, uri: String?) {
+        backgroundImageUri = uri
+        com.glassplayer.app.data.Store(ctx.applicationContext).backgroundImageUri = uri.orEmpty()
+    }
+
+    fun setBackgroundBlur(ctx: android.content.Context, blurDp: Float) {
+        backgroundBlurDp = blurDp.coerceIn(0f, 20f)
+        com.glassplayer.app.data.Store(ctx.applicationContext).backgroundBlurDp = backgroundBlurDp
     }
 }
 
@@ -199,27 +257,44 @@ fun Modifier.glass(
 @Composable
 fun DefaultBackdrop() {
     Box(
-        Modifier
-            .fillMaxSize()
-            .background(AppTheme.brush())
-            .drawBehind {
-                fun blob(cx: Float, cy: Float, r: Float, c: Color) {
-                    val center = Offset(size.width * cx, size.height * cy)
-                    val radius = size.width * r
-                    drawCircle(
-                        Brush.radialGradient(listOf(c, Color.Transparent), center = center, radius = radius),
-                        radius = radius,
-                        center = center,
-                    )
+        Modifier.fillMaxSize(),
+    ) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(AppTheme.brush())
+                .drawBehind {
+                    fun blob(cx: Float, cy: Float, r: Float, c: Color) {
+                        val center = Offset(size.width * cx, size.height * cy)
+                        val radius = size.width * r
+                        drawCircle(
+                            Brush.radialGradient(listOf(c, Color.Transparent), center = center, radius = radius),
+                            radius = radius,
+                            center = center,
+                        )
+                    }
+                    if (AppTheme.pureBlackActive) return@drawBehind
+                    val b = AppTheme.palette.blobs
+                    blob(0.92f, 0.16f, 0.75f, b[0])
+                    blob(0.04f, 0.38f, 0.65f, b[1])
+                    blob(0.88f, 0.60f, 0.65f, b[2])
+                    blob(0.12f, 0.85f, 0.80f, b[3])
                 }
-                if (AppTheme.pureBlackActive) return@drawBehind
-                val b = AppTheme.palette.blobs
-                blob(0.92f, 0.16f, 0.75f, b[0])
-                blob(0.04f, 0.38f, 0.65f, b[1])
-                blob(0.88f, 0.60f, 0.65f, b[2])
-                blob(0.12f, 0.85f, 0.80f, b[3])
-            }
-    )
+        )
+        val imageUri = AppTheme.backgroundImageUri
+        if (!imageUri.isNullOrBlank() && !AppTheme.pureBlackActive) {
+            val imageModifier = Modifier
+                .fillMaxSize()
+                .then(if (AppTheme.backgroundBlurDp > 0f) Modifier.blur(AppTheme.backgroundBlurDp.dp) else Modifier)
+            AsyncImage(
+                model = imageUri,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = imageModifier,
+            )
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
+        }
+    }
 }
 
 /** Latar layar penuh yang sekaligus direkam ke [LocalBackdrop] untuk dipakai panel kaca. */

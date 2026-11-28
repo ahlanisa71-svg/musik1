@@ -10,12 +10,15 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.provider.Settings
 import com.glassplayer.app.ui.TrToast as Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
@@ -25,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -143,9 +147,26 @@ fun EqualizerPage(onBack: () -> Unit) {
 //  Tema warna
 // ---------------------------------------------------------------------
 
+private val CustomThemeColors = listOf(
+    0xFF6FA8D6.toInt(), 0xFF376994.toInt(), 0xFF8FBF8A.toInt(), 0xFF4F8A5B.toInt(),
+    0xFFE39A8A.toInt(), 0xFFB05A7A.toInt(), 0xFFB9AC74.toInt(), 0xFF3F3A29.toInt(),
+    0xFFA688DA.toInt(), 0xFFD06A9E.toInt(), 0xFF16243B.toInt(), 0xFF121212.toInt(),
+)
+
 @Composable
 fun ThemePage(onBack: () -> Unit) {
     val ctx = LocalContext.current
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            try {
+                ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: SecurityException) {
+                Toast.makeText(ctx, "Izin foto tidak dapat disimpan setelah aplikasi ditutup.", Toast.LENGTH_LONG).show()
+                return@rememberLauncherForActivityResult
+            }
+            AppTheme.setBackgroundImage(ctx, uri.toString())
+        }
+    }
     Column(Modifier.fillMaxSize()) {
         PageHeader("Tema warna", onBack)
         LazyVerticalGrid(
@@ -154,8 +175,8 @@ fun ThemePage(onBack: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            items(Palettes.indices.toList()) { i ->
-                val p = Palettes[i]
+            items((0..CUSTOM_THEME_INDEX).toList()) { i ->
+                val p = AppTheme.paletteAt(i)
                 val sel = AppTheme.index == i
                 Box(
                     Modifier
@@ -188,6 +209,83 @@ fun ThemePage(onBack: () -> Unit) {
                                 .padding(3.dp),
                         )
                     }
+                }
+            }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Color.White.copy(alpha = 0.10f))
+                        .padding(16.dp),
+                ) {
+                    Text("Kustomisasi latar", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Spacer(Modifier.height(12.dp))
+                    ThemeColorChoices("Warna atas gradasi", AppTheme.customGradientTop) { color ->
+                        AppTheme.setCustomGradient(ctx, color, AppTheme.customGradientBottom)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    ThemeColorChoices("Warna bawah gradasi", AppTheme.customGradientBottom) { color ->
+                        AppTheme.setCustomGradient(ctx, AppTheme.customGradientTop, color)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(onClick = { imagePicker.launch(arrayOf("image/*")) }) {
+                        Icon(Icons.Rounded.PhotoLibrary, null, tint = Accent)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Pilih foto dari galeri", color = Accent)
+                    }
+                    if (AppTheme.backgroundImageUri != null) {
+                        TextButton(onClick = { AppTheme.setBackgroundImage(ctx, null) }) {
+                            Text("Hapus foto latar", color = SubText)
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text("Blur foto", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                        listOf(0f to "Mati", 4f to "Ringan", 8f to "Sedang", 16f to "Kuat").forEach { (blur, label) ->
+                            Text(
+                                label,
+                                color = if (AppTheme.backgroundBlurDp == blur) Color.Black else Color.White,
+                                fontSize = 12.sp,
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(if (AppTheme.backgroundBlurDp == blur) Accent else Color.White.copy(alpha = 0.12f))
+                                    .clickable { AppTheme.setBackgroundBlur(ctx, blur) }
+                                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                            )
+                        }
+                    }
+                    if (Build.VERSION.SDK_INT < 31) {
+                        Text("Efek blur foto memerlukan Android 12 atau lebih baru.", color = SubText, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemeColorChoices(label: String, selected: Int, onSelect: (Int) -> Unit) {
+    Column {
+        Text(label, color = SubText, fontSize = 12.sp)
+        CustomThemeColors.chunked(6).forEach { colors ->
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
+            ) {
+                colors.forEach { color ->
+                    Box(
+                        Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(Color(color))
+                            .border(
+                                if (color == selected) 2.dp else 1.dp,
+                                if (color == selected) Color.White else Color.White.copy(alpha = 0.35f),
+                                CircleShape,
+                            )
+                            .clickable { onSelect(color) },
+                    )
                 }
             }
         }

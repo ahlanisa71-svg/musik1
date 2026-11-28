@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.RadioButton
@@ -41,11 +42,12 @@ private val moodChoices = listOf(
 fun NewMusicScreen(vm: MusicViewModel, onOpen: (List<Song>, String) -> Unit) {
     val newest = vm.listFor(com.glassplayer.app.DetailKey.Newest)
     val ctx = LocalContext.current
+    val activeDownloads by vm.activeDownloads.collectAsState()
     var videos by remember { mutableStateOf<List<com.glassplayer.app.data.YtVideo>?>(null) }
     var videosErr by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         if (com.glassplayer.app.data.YouTubeApi.hasKey) {
-            val r = com.glassplayer.app.data.YouTubeApi.musicVideos(ctx)
+            val r = com.glassplayer.app.data.YouTubeApi.musicVideos()
             videos = r.getOrNull()
             videosErr = r.exceptionOrNull()?.message
         }
@@ -75,6 +77,7 @@ fun NewMusicScreen(vm: MusicViewModel, onOpen: (List<Song>, String) -> Unit) {
                 item { Text("Memuat video musik…", color = SubText, fontSize = 13.sp) }
             } else {
                 items(videos!!, key = { "yt:" + it.id }) { v ->
+                    val download = activeDownloads[v.id]
                     Row(
                         Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(RoundedCornerShape(16.dp))
                             .background(Color.White.copy(.08f))
@@ -87,7 +90,28 @@ fun NewMusicScreen(vm: MusicViewModel, onOpen: (List<Song>, String) -> Unit) {
                         Column(Modifier.weight(1f)) {
                             Text(v.title, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             Text(v.channel, color = SubText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("Putar di Musix", color = Accent, fontSize = 11.sp)
+                            Text(
+                                when {
+                                    download?.isCompleted == true -> "Unduhan selesai"
+                                    download?.error != null -> "Gagal: ${download.error}"
+                                    download != null -> "Mengunduh ${(download.progress * 100).toInt()}%"
+                                    else -> "Putar di Musix"
+                                },
+                                color = if (download?.error != null) Color(0xFFFF8A80) else Accent,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        IconButton(
+                            onClick = { vm.downloadYouTube(v.id, v.title, asVideo = true) },
+                            enabled = download == null || download.isCompleted || download.error != null,
+                        ) {
+                            Icon(
+                                if (download?.isCompleted == true) Icons.Rounded.Check else Icons.Rounded.Download,
+                                contentDescription = "Unduh video ${v.title}",
+                                tint = if (download?.isCompleted == true) Accent else Color.White,
+                            )
                         }
                     }
                 }
@@ -169,21 +193,19 @@ fun DownloadsStoragePage(vm: MusicViewModel, onBack: () -> Unit) {
             Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Download, null, tint = Accent)
                 Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) { Text("Downloads", color = Color.White, fontWeight = FontWeight.SemiBold); Text("File musik pada folder Download", color = SubText, fontSize = 11.sp) }
+                Column(Modifier.weight(1f)) { Text("Unduhan Musix", color = Color.White, fontWeight = FontWeight.SemiBold); Text("File audio tersimpan di folder aplikasi", color = SubText, fontSize = 11.sp) }
                 Text("${downloads.size}", color = Color.White)
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Wifi, null, tint = Accent)
                 Spacer(Modifier.width(12.dp)); Text("Download over Wi-Fi only", color = Color.White, modifier = Modifier.weight(1f)); Text("—", color = SubText)
             }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp).clickable {
-                runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse("content://com.android.externalstorage.documents/document/primary%3ADownload"), "vnd.android.document/directory")) }
-            }, verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.FolderOpen, null, tint = Accent); Spacer(Modifier.width(12.dp)); Text("Buka folder Download", color = Color.White)
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.FolderOpen, null, tint = Accent); Spacer(Modifier.width(12.dp)); Text("Penyimpanan Musik/MusixDownloads aplikasi", color = Color.White, fontSize = 12.sp)
             }
         }
         Spacer(Modifier.height(12.dp))
-        Text("Catatan: Musix memutar file lokal. Pengelolaan unduhan streaming dan penghapusan cache khusus belum tersedia.", color = SubText, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 18.dp))
+        Text("Audio yang selesai diunduh muncul di pustaka Lagu Terunduh. File video tetap bisa diputar dari pemutar Musix.", color = SubText, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 18.dp))
     }
 }
 

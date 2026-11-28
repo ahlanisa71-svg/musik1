@@ -44,6 +44,18 @@ class Store(ctx: Context) {
     var themeIndex: Int
         get() = sp.getInt("theme", 0)
         set(v) { sp.edit().putInt("theme", v).apply() }
+    var customGradientTop: Int
+        get() = sp.getInt("custom_gradient_top", 0xFF6FA8D6.toInt())
+        set(v) { sp.edit().putInt("custom_gradient_top", v).apply() }
+    var customGradientBottom: Int
+        get() = sp.getInt("custom_gradient_bottom", 0xFF080F1A.toInt())
+        set(v) { sp.edit().putInt("custom_gradient_bottom", v).apply() }
+    var backgroundImageUri: String
+        get() = sp.getString("background_image_uri", "").orEmpty()
+        set(v) { sp.edit().putString("background_image_uri", v).apply() }
+    var backgroundBlurDp: Float
+        get() = sp.getFloat("background_blur_dp", 8f)
+        set(v) { sp.edit().putFloat("background_blur_dp", v).apply() }
 
     // Status terakhir untuk widget layar utama (ditulis oleh PlaybackService)
     var widgetTitle: String

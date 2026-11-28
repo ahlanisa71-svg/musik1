@@ -38,6 +38,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Checklist
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
@@ -68,6 +69,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedTextField
@@ -151,7 +153,12 @@ private fun LazyListScope.songItems(
 // =====================================================================
 
 @Composable
-fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
+fun AppRoot(
+    vm: MusicViewModel,
+    revealed: Boolean = true,
+    openUpdateChecker: Boolean = false,
+    onUpdateCheckerOpened: () -> Unit = {},
+) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -410,7 +417,7 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
               AnimatedContent(
                 targetState = Nav(detail, page, tab),
                 transitionSpec = {
-                    fadeIn(tween(200)) togetherWith fadeOut(tween(120))
+                    fadeIn(tween(150)) togetherWith fadeOut(tween(100))
                 },
                 label = "nav",
               ) { st ->
@@ -645,12 +652,21 @@ fun AppRoot(vm: MusicViewModel, revealed: Boolean = true) {
     // Pemeriksaan pembaruan otomatis sekali saat aplikasi dibuka (hanya memberi tahu; memasang tetap manual).
     var autoUpdate by remember { mutableStateOf<com.glassplayer.app.data.UpdateInfo?>(null) }
     var showUpdateDlg by remember { mutableStateOf(false) }
+    LaunchedEffect(revealed, openUpdateChecker) {
+        if (revealed && openUpdateChecker) {
+            showUpdateDlg = true
+            onUpdateCheckerOpened()
+        }
+    }
     LaunchedEffect(revealed) {
         if (revealed) {
             kotlinx.coroutines.delay(2500)
             if (com.glassplayer.app.data.Updater.shouldAutoCheck(ctx)) {
                 val r = com.glassplayer.app.data.Updater.check(ctx)
-                if (r is com.glassplayer.app.data.UpdateCheck.Available) autoUpdate = r.info
+                if (r is com.glassplayer.app.data.UpdateCheck.Available) {
+                    autoUpdate = r.info
+                    com.glassplayer.app.data.Updater.notifyUpdateAvailable(ctx, r.info)
+                }
             }
         }
     }
@@ -1463,6 +1479,7 @@ fun SearchScreen(
 ) {
     val favSet = remember(vm.favorites) { vm.favorites.toSet() }
     val onlineResults by vm.onlineResults.collectAsState()
+    val activeDownloads by vm.activeDownloads.collectAsState()
     val searchingOnline by vm.isSearchingOnline.collectAsState()
     val onlineSearchError by vm.onlineSearchError.collectAsState()
     val videosOnly by vm.searchVideosOnly.collectAsState()
@@ -1602,6 +1619,7 @@ fun SearchScreen(
                     )
                 }
                 else -> itemsIndexed(onlineResults, key = { _, item -> item.id }) { _, item ->
+                    val download = item.youtubeVideoId?.let(activeDownloads::get)
                     Row(
                         Modifier
                             .fillMaxWidth()
@@ -1626,7 +1644,28 @@ fun SearchScreen(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            Text("Putar di Musix", color = Accent, fontSize = 11.sp)
+                            Text(
+                                when {
+                                    download?.isCompleted == true -> "Unduhan selesai"
+                                    download?.error != null -> "Gagal: ${download.error}"
+                                    download != null -> "Mengunduh ${(download.progress * 100).toInt()}%"
+                                    else -> "Putar di Musix"
+                                },
+                                color = if (download?.error != null) Color(0xFFFF8A80) else Accent,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        IconButton(
+                            onClick = { vm.downloadCurrentOrItem(item) },
+                            enabled = download == null || download.isCompleted || download.error != null,
+                        ) {
+                            Icon(
+                                if (download?.isCompleted == true) Icons.Rounded.Check else Icons.Rounded.Download,
+                                contentDescription = "Unduh ${item.title}",
+                                tint = if (download?.isCompleted == true) Accent else Color.White,
+                            )
                         }
                     }
                 }

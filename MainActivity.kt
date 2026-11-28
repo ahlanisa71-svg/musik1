@@ -19,9 +19,11 @@ import kotlinx.coroutines.delay
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MusicViewModel by viewModels()
+    private val openUpdateChecker = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        openUpdateChecker.value = intent.getBooleanExtra(EXTRA_OPEN_UPDATER, false)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
@@ -36,9 +38,27 @@ class MainActivity : ComponentActivity() {
                 if (!revealed) {
                     SplashScreen()
                 } else {
-                    AppRoot(vm = viewModel, revealed = true)
+                    AppRoot(
+                        vm = viewModel,
+                        revealed = true,
+                        openUpdateChecker = openUpdateChecker.value,
+                        onUpdateCheckerOpened = {
+                            openUpdateChecker.value = false
+                            intent.removeExtra(EXTRA_OPEN_UPDATER)
+                        },
+                    )
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        openUpdateChecker.value = intent.getBooleanExtra(EXTRA_OPEN_UPDATER, false)
+    }
+
+    companion object {
+        const val EXTRA_OPEN_UPDATER = "com.glassplayer.app.OPEN_UPDATER"
     }
 }
